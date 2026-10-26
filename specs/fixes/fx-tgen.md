@@ -1,6 +1,6 @@
 # FX-TGEN: генерация заданий без повторных сканов мира + профилировщик заданий
 Статус: черновик        Проверка в игре: не проводилась        Мод: `zz Task Generation Speed Fix`        Скрипты: `gamedata/scripts/zz_xrrfix_tgen.script` (ускорение), `gamedata/scripts/zz_xrrfix_tgen_prof.script` (профилировщик)
-Где ставить: хост (там генерируются задания; в соло тоже работает; у пира ставится вместе с пакетом и ничего не меняет)        Зависит от: Anomaly `axr_task_manager`, `xr_conditions.has_completed_task_prerequisites`; для bounty — PDA Taskboard Redesign v1.3 (`z_taskboard_bounty_variants`); без него bounty-часть пропускается        Лог-маркеры: `[XRRFIX] tgen: prerequisites memo installed (5000 ms)`, `[XRRFIX] tgen: bounty scan shared (snapshot 5000 ms)`, `[XRRFIX] taskprof: installed (<N> functions timed)`
+Где ставить: хост (там генерируются задания; в соло тоже работает; у пира ставится вместе с пакетом и ничего не меняет)        Зависит от: Anomaly `axr_task_manager`, `xr_conditions.has_completed_task_prerequisites`; для bounty — PDA Taskboard Redesign v1.3 (`z_taskboard_bounty_variants`); без него bounty-часть пропускается        Лог-маркеры: `[XRRFIX] tgen: prerequisites memo installed (5000 ms)`, `[XRRFIX] tgen: bounty scan shared (snapshot 5000 ms)`, `[XRRFIX] tgen: measure scan shared (snapshot 5000 ms)`, `[XRRFIX] tgen: delivery scan shared (snapshot 5000 ms)`, `[XRRFIX] taskprof: installed (<N> functions timed)`
 
 ## Проблема
 После FX-QLIST «Обновить» в Taskboard у пира больше не останавливает картинку хоста на секунды, но хост лагает примерно
@@ -28,6 +28,14 @@
    Tasks QoL в порядке MO2). Его локальная `build_variants(task_id, p)` делает `for id = 1, 65534 do sim:object(id)` и
    отбирает живых сим-сталкеров в отрядах нужных фракций. Вызывается из `variant_list`, когда у задания нет живых
    кэшированных вариантов — на холодном «Обновить» это каждое bounty-задание каждого NPC, по полному скану на задание.
+3. **Замер и доставка: свой полный перебор на каждого NPC.** `validate_measure_task` (Oleh's Tasks Crash Fixes,
+   `tasks_measure.script`; поверх — обёртка G_FLAT's More Measurement Task Maps, держит оригинал в локальной
+   `validate_measure_task_original` и ставит режим поиска 5) и `xr_effects.on_init_delivery_task` (Tasks QoL,
+   `tasks_delivery.script`; на хосте поверх — защита xrRazom `xrr_patch_task_guards`, оригинал в её upvalue `orig`)
+   зависят от NPC диалога и кэшируют результат на NPC, поэтому память предусловий (п. 1) их не делит, а каждый вызов
+   перебирает `1..65534`. Замер у хоста (2026-10-27, `xray_drago.log`): пачка 40 NPC — `validate_measure_task`
+   72 вызова, 3654 мс из 3691 мс генерации; доставка без цели (`simulation_task_48 ... no target found`) ничего не
+   кэширует и перебирает мир на каждом «Обновить» (14 вызовов, 904 мс за 4,7 с).
 
 ## Решение
 `zz_xrrfix_tgen.script`, в `on_game_start` под `pcall`, каждая часть один раз:
@@ -52,6 +60,21 @@
     порядок выбора тот же (враги, нейтралы, прочие враги, прочие нейтралы, каждая группа перемешана), до `MAX_VARIANTS`;
   - каждый выбранный кандидат перед добавлением проверяется `candidate_valid(id, p)` мода — умерший или сменивший
     фракцию за время жизни снимка пропускается.
+- **Один перебор мира на всех.** Снимок общий: части регистрируют сборщики, каждый за один проход `1..65534` собирает
+  свой список (bounty — как выше; замер — аномалии всех типов `anomaly_types`: id, секция, уровень, `online`; доставка —
+  командиры сим-отрядов, отбор как у оригинала: живой сталкер `sim_default` без story id, командир отряда `sim_squad`
+  с `current_action == 1`; запоминаются фракция, уровень, «тот же уровень» и «связанный уровень»). Снимок живёт
+  5000 мс, `on_level_changing` его сбрасывает.
+- **Замер.** В цепочке обёрток `xr_conditions.validate_measure_task` ищется функция с upvalue `cache` и `anomaly_types`
+  (оригинал); на её место (в upvalue обёртки G_FLAT или в таблицу, если обёртки нет) ставится копия оригинала, в которой
+  перебор мира заменён списком аномалий снимка. Остальное как у оригинала: NPC диалога, его `cache[task_id][giver_id]`,
+  фильтр по типам, `blacklisted_maps` (upvalue или переменная модуля `tasks_measure`, её меняет G_FLAT), северные карты
+  `blacklist_helper`, динамические аномалии, режим поиска, случайный выбор. Без оригинала —
+  `[XRRFIX] tgen: validate_measure_task not recognised, measure part skipped`.
+- **Доставка.** Так же для `xr_effects.on_init_delivery_task` (upvalue `delivery_cache` и `faction_list`; место — в
+  upvalue `orig` защиты xrRazom или в таблице): копия оригинала, поиск командиров заменён списком снимка, фильтр
+  фракций по NPC диалога, «нет цели» — как у оригинала (`TaskBlacklist`, без кэша), но без нового перебора. Без
+  оригинала — `[XRRFIX] tgen: on_init_delivery_task not recognised, delivery part skipped`.
 - Счётчики для профилировщика: попадания и промахи памяти, сколько снимков построено и сколько раз переиспользован.
 
 `zz_xrrfix_tgen_prof.script` (диагностика), в `on_game_start` регистрирует `actor_on_first_update`, где один раз (после всех
@@ -62,7 +85,7 @@
 вроде `squad_exist` не оборачиваются). Время — `profile_timer` (мкс), без него `os.clock`; время вложенных вызовов входит
 во внешние. В `actor_on_update`: если с последнего замера прошло ≥ 1000 мс и набрано ≥ 5 мс, пишет итог и обнуляет:
 ```
-[XRRFIX] taskprof: <S> s, generate <N> calls <X> ms | memo <h>/<h+m> hits, bounty snapshots <b> built, <r> reused
+[XRRFIX] taskprof: <S> s, generate <N> calls <X> ms | memo <h>/<h+m> hits, world snapshots <b> built, <r> reused
 [XRRFIX] taskprof: #<i> <имя> | total <X> ms | calls <N> | max <Y> ms        (до 8 строк, по убыванию total)
 ```
 
@@ -85,7 +108,7 @@
 и ничего не запоминать.
 
 ### FX-TGEN-004 Сброс при смене уровня  [auto]
-`on_level_changing` ДОЛЖЕН очищать память предусловий и снимок bounty.
+`on_level_changing` ДОЛЖЕН очищать память предусловий и снимок мира.
 
 ### FX-TGEN-005 Установка bounty-части  [auto]
 Фикс ДОЛЖЕН найти `build_variants` в `variant_list` модуля `z_taskboard_bounty_variants`, заменить её один раз и записать
@@ -127,6 +150,27 @@
   затем для NPC 2 через 100 мс. Тогда ответы `true`, `false`, оригинал вызван 2 раза.
 - Без `mob_trade` память работает как в FX-TGEN-002.
 
+### FX-TGEN-013 Замер: установка  [auto]
+Фикс ДОЛЖЕН найти оригинал `validate_measure_task` (upvalue `cache` и `anomaly_types`) в таблице или в цепочке обёрток,
+поставить копию на его место один раз и записать лог-маркер; обёртки сверху (G_FLAT) ДОЛЖНЫ остаться и работать.
+Без оригинала или без `debug` — строка `... measure part skipped`, ничего не меняется.
+
+### FX-TGEN-014 Замер: результат как у оригинала  [auto]
+Для любого NPC копия ДОЛЖНА давать тот же ответ и ту же запись `cache[task_id][giver_id]`, что оригинал на том же мире и
+тех же случайных числах, и делать не больше одного перебора на снимок для всех NPC.
+- Дано три NPC, один квест на замер. Тогда записи кэша как у оригинала, `alife():object` вызван 65 534 раза (у оригинала —
+  втрое больше).
+- Дано `blacklisted_maps` модуля изменён во время игры. Тогда копия видит изменение.
+
+### FX-TGEN-015 Доставка: установка  [auto]
+Фикс ДОЛЖЕН найти оригинал `on_init_delivery_task` (upvalue `delivery_cache` и `faction_list`) в таблице или под защитой
+xrRazom, поставить копию на его место один раз и записать лог-маркер; защита xrRazom (на пире — ничего) ДОЛЖНА остаться.
+
+### FX-TGEN-016 Доставка: результат как у оригинала  [auto]
+Для любого NPC копия ДОЛЖНА выбирать ту же цель и класть то же в `delivery_cache` и `save_var`, что оригинал, а при
+отсутствии цели — ставить `TaskBlacklist[task_id] = true` без нового перебора в пределах снимка.
+- Дано два NPC, ближняя и дальняя доставка. Тогда цели как у оригинала, один перебор (у оригинала — по одному на вызов).
+
 ### FX-TGEN-011 В игре  [manual]
 - Дано кооп, пир у базы «Свободы». Когда пир жмёт «Обновить» в Taskboard (первый раз после загрузки). Тогда просадка у
   хоста короче и слабее, чем без фикса; в логе хоста `taskprof`-итог с `memo` попаданиями и `bounty snapshots`, суммарное
@@ -152,12 +196,17 @@
 - Замер у KDVFirehawk (хост, 2026-10-26, первое «Обновить»): `generate 30 calls 148 ms`, память 1890/2051;
   `validate_measure_task` 3 вызова ≈ 97 мс, `on_init_delivery_task` 2 вызова ≈ 95 мс, `setup_bounty_task` (снимок) ≈ 50 мс —
   все три делают свой полный перебор 65 534 объектов. Просадка 90 → 60 FPS на ~0,5 с вместо 3–5 с остановки.
-  Следующий шаг — общий снимок мира для measure/delivery (потребует своих копий этих функций).
+  Сделано (FX-TGEN-013…016): замер и доставка берут цели из общего снимка.
+- Замер и доставка — **копии** чужих функций (Oleh's Tasks Crash Fixes `tasks_measure.validate_measure_task`, Tasks QoL
+  `tasks_delivery.on_init_delivery_task`). После обновления этих модов — сверить копии с оригиналами; если пропадут
+  нужные локальные переменные, фикс сам пропустит часть (лог `... not recognised`), но изменения логики внутри функции
+  сам не заметит.
 - Профилировщик — диагностика; после замеров его можно убрать из мода.
 
 ## Проверка в игре
 1. Лог хоста после загрузки: `[XRRFIX] tgen: prerequisites memo installed (5000 ms)`,
-   `[XRRFIX] tgen: bounty scan shared (snapshot 5000 ms)`, `[XRRFIX] taskprof: installed (N functions timed)`.
+   `[XRRFIX] tgen: bounty scan shared (snapshot 5000 ms)`, `... measure scan shared ...`, `... delivery scan shared ...`,
+   `[XRRFIX] taskprof: installed (N functions timed)`.
 2. Пир у базы с NPC жмёт «Обновить» в Taskboard. Хост — оценить просадку; лог хоста — итог `taskprof` и строка `questq`
    (FX-QLIST). Записать цифры сюда.
 3. Для сравнения — то же с отключённым `zz_xrrfix_tgen.script` (переименовать файл), профилировщик оставить.

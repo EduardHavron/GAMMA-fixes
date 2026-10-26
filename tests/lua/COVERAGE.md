@@ -24,6 +24,10 @@ Third-party modules are replaced by small stand-ins that copy the signatures and
 | FX-TGEN-010 | FX-TGEN-010 summary after 1 s idle: totals, nested time inside callers, top list; under 5 ms (nested time counted once): no summary, counters reset | test_tgen.lua |
 | FX-TGEN-011 | manual (in game: host lag on a cold Taskboard refresh, taskprof summary) | — |
 | FX-TGEN-012 | FX-TGEN-012 preconditions that read the dialog NPC are never answered from the memo; without mob_trade the memo works as before | test_tgen.lua |
+| FX-TGEN-013 | FX-TGEN-013 measure copy replaces the original under G_FLAT's wrapper, once; G_FLAT still applies | test_tgen.lua |
+| FX-TGEN-014 | FX-TGEN-014 measure: same candidates as the original, per-NPC cache, one scan for many NPCs | test_tgen.lua |
+| FX-TGEN-015 | FX-TGEN-015 delivery copy replaces the original under xrRazom's host guard, once; the guard still works | test_tgen.lua |
+| FX-TGEN-016 | FX-TGEN-016 delivery: same target as the original, per-NPC cache, no-target answered from the snapshot | test_tgen.lua |
 
 ### MOD-LOOTCLAIM (Combined GAMMA NPC Loot Claim, folder name read from pack.json) — test_lootclaim.lua
 
@@ -88,3 +92,5 @@ None at the moment.
   published yet).
 - FX-TGEN: 7 mutations (memo TTL `<=`, no `candidate_valid`, `p[3]` ignored, logic calls memoized, nested profiler time
   counted twice, idle 500 ms, no clear on level change), each failed exactly its requirement's case.
+- FX-TGEN measure/delivery: 8 mutations (no type filter, blacklist frozen at install, same-level commanders kept, far/linked
+  inverted, replacement not put into the table / wrapper, wrapper bypassed, no idempotency, no faction filter), each caught.
