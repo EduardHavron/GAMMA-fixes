@@ -75,6 +75,9 @@
 	<string id="st_qct_give_busy">
 		<text>Wait: the previous give is still running.</text>
 	</string>
+	<string id="st_qct_gifts_received">
+		<text>%s sent you items: %s</text>
+	</string>
 
 	<string id="ui_mcm_menu_qct">
 		<text>Quantity Craft and Transfer</text>

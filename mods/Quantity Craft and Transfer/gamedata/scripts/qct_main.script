@@ -26,6 +26,7 @@
 	Giving (xrRazom co-op)
 	  "Give several: <Nickname>" next to xrRazom's own "Send to" entries: N best items of a stack go
 	  to a player within 5 m, one SendGiveItem per id, re-checked before every send.
+	  The receiver gets one "<nick> sent you items: N" tip per batch instead of one per item.
 --]]
 
 local LOG = "[QCT]"
@@ -985,6 +986,67 @@ function open_give_dialog(gui, id, bag, slot)
 	})
 end
 
+-------------------------------------------------------------------
+-- xrRazom: one notification per batch of received items
+-------------------------------------------------------------------
+-- The engine calls _G.OnPeerGiftReceived(sender_nick) once per received item and xrRazom shows
+-- "<nick> sent you an item!" every time, so "Give several" of 30 items showed 30 tips. Gifts are
+-- counted per sender and shown as one tip when none arrived for GIFT_QUIET_MS; a single item keeps
+-- xrRazom's own text.
+local GIFT_QUIET_MS = 600
+
+local gifts = {}         -- sender nick -> { n, last }
+local orig_gift = nil
+
+function flush_gifts(force)
+	local now = time_continual()
+	for nick, g in pairs(gifts) do
+		if force or (now - g.last >= GIFT_QUIET_MS) then
+			gifts[nick] = nil
+			if (g.n == 1) then
+				orig_gift(nick)
+			elseif db.actor then
+				news_manager.send_tip(db.actor, tr("st_qct_gifts_received", nick, g.n), nil, "nano", 8000)
+			end
+		end
+	end
+end
+
+local function on_gift(sender_nick, ...)
+	-- No actor or empty nick (host-synthesized grant): xrRazom decides, as before
+	if not (db.actor and sender_nick and (sender_nick ~= "")) then
+		return orig_gift(sender_nick, ...)
+	end
+	local g = gifts[sender_nick]
+	if (not g) then
+		g = { n = 0 }
+		gifts[sender_nick] = g
+	end
+	g.n = g.n + 1
+	g.last = time_continual()
+end
+
+local function install_gifts()
+	local _ = xrr_net_client -- force-load: it exports the handler to _G
+	local cur = rawget(_G, "OnPeerGiftReceived")
+	if (type(cur) ~= "function") or (cur == on_gift) then
+		return
+	end
+	orig_gift = cur
+	_G.OnPeerGiftReceived = on_gift
+	printf("%s gifts: one notification per batch", LOG)
+end
+
+local function gift_tick()
+	if orig_gift and next(gifts) then
+		local ok, err = pcall(flush_gifts)
+		if (not ok) then
+			printe("!ERROR %s gifts: %s", LOG, tostring(err))
+			gifts = {}
+		end
+	end
+end
+
 local function inv_hotkey(gui)
 	local bag, idx = gui.hover and gui.hover.bag, gui.hover and gui.hover.idx
 	if not (bag and idx) then
@@ -1176,6 +1238,7 @@ local function install_inventory()
 	if orig_inv_update then
 		cls.Update = function(self, ...)
 			orig_inv_update(self, ...)
+			gift_tick()
 			if give_queue then
 				local ok, err = pcall(give_tick)
 				if (not ok) then
@@ -1208,9 +1271,12 @@ function on_game_start()
 		if (not ok) then printe("!ERROR %s workshop install: %s", LOG, tostring(err)) end
 		ok, err = pcall(install_inventory)
 		if (not ok) then printe("!ERROR %s inventory install: %s", LOG, tostring(err)) end
+		ok, err = pcall(install_gifts)
+		if (not ok) then printe("!ERROR %s gifts install: %s", LOG, tostring(err)) end
 	end)
 
 	RegisterScriptCallback("actor_on_update", function()
+		gift_tick()
 		if give_queue then
 			local ok, err = pcall(give_tick)
 			if (not ok) then

@@ -75,6 +75,9 @@
 	<string id="st_qct_give_busy">
 		<text>Aguarde: a entrega anterior ainda está em andamento.</text>
 	</string>
+	<string id="st_qct_gifts_received">
+		<text>%s enviou itens para você: %s</text>
+	</string>
 
 	<string id="ui_mcm_menu_qct">
 		<text>Quantity Craft and Transfer</text>

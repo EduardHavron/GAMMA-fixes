@@ -75,6 +75,9 @@
 	<string id="st_qct_give_busy">
 		<text>Patientez : le don précédent est encore en cours.</text>
 	</string>
+	<string id="st_qct_gifts_received">
+		<text>%s vous a envoyé des objets : %s</text>
+	</string>
 
 	<string id="ui_mcm_menu_qct">
 		<text>Quantity Craft and Transfer</text>

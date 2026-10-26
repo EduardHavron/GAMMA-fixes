@@ -75,6 +75,9 @@
 	<string id="st_qct_give_busy">
 		<text>Зачекайте: попередня передача ще триває.</text>
 	</string>
+	<string id="st_qct_gifts_received">
+		<text>%s передав вам предметів: %s</text>
+	</string>
 
 	<string id="ui_mcm_menu_qct">
 		<text>Quantity Craft and Transfer</text>
