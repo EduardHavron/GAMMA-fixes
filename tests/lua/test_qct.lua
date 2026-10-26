@@ -470,3 +470,84 @@ H.case("MOD-QCT-016 eng, rus, ukr, spa, fra, ptb: same ids and %s counts as eng,
 		end
 	end
 end)
+
+-- MOD-QCT-017: the receiver gets one tip per batch of gifts
+local NET_SRC = [==[
+calls = {}
+function OnPeerGiftReceived(nick) calls[#calls + 1] = nick end
+_G.OnPeerGiftReceived = OnPeerGiftReceived
+]==]
+
+local function gift_setup(no_xrr)
+	local G = H.env()
+	local w = world(G)
+	G.__tips = {}
+	G.news_manager = { send_tip = function(_, text) G.__tips[#G.__tips + 1] = text end }
+	G.game = { translate_string = function(s)
+		if s == "st_qct_gifts_received" then return "%s sent you items: %s" end
+		return s
+	end }
+	if not no_xrr then H.lazy(G, "xrr_net_client", NET_SRC) end
+	local m = H.load_fix(G, MOD, FILE)
+	m.on_game_start()
+	G.SendScriptCallback("actor_on_first_update")
+	return G, w, m, rawget(G, "xrr_net_client")
+end
+
+H.case("MOD-QCT-017 handler wrapped once after force-loading xrr_net_client; solo: nothing", function()
+	local G, _, _, net = gift_setup()
+	H.truthy(net, "xrr_net_client force-loaded")
+	H.truthy(G.OnPeerGiftReceived ~= net.OnPeerGiftReceived, "_G handler replaced")
+	local w = G.OnPeerGiftReceived
+	G.SendScriptCallback("actor_on_first_update")
+	H.truthy(G.OnPeerGiftReceived == w, "wrapped once")
+	H.eq(1, H.log_count(G, "[QCT] gifts: one notification per batch"), "marker once")
+	G.OnPeerGiftReceived("Friend")
+	G.__clock = 1000
+	G.SendScriptCallback("actor_on_update")
+	H.same({ "Friend" }, net.calls, "one original call (no double wrap)")
+
+	local S = gift_setup(true)
+	H.log_lacks(S, "[QCT] gifts:")
+	H.falsy(rawget(S, "OnPeerGiftReceived"), "solo: no handler installed")
+end)
+
+H.case("MOD-QCT-017 five gifts: one tip 600 ms after the last; one gift: xrRazom's own text; two senders: two tips", function()
+	local G, _, _, net = gift_setup()
+	for i = 1, 5 do
+		G.__clock = (i - 1) * 50
+		G.OnPeerGiftReceived("Friend")
+	end
+	G.__clock = 200 + 599
+	G.SendScriptCallback("actor_on_update")
+	H.eq(0, #G.__tips, "nothing before 600 ms of quiet")
+	G.__clock = 200 + 600
+	G.SendScriptCallback("actor_on_update")
+	H.same({ "Friend sent you items: 5" }, G.__tips, "one tip with the count")
+	H.eq(0, #net.calls, "original not called")
+	G.SendScriptCallback("actor_on_update")
+	H.eq(1, #G.__tips, "shown once")
+
+	G.__clock = 2000
+	G.OnPeerGiftReceived("Friend")
+	G.__clock = 2600
+	G.SendScriptCallback("actor_on_update")
+	H.same({ "Friend" }, net.calls, "single gift: original with the nick")
+	H.eq(1, #G.__tips, "no extra tip")
+
+	G.__clock = 3000
+	G.OnPeerGiftReceived("A"); G.OnPeerGiftReceived("B"); G.OnPeerGiftReceived("B")
+	G.__clock = 3600
+	G.SendScriptCallback("actor_on_update")
+	H.eq("A", net.calls[2], "A: one item, original")
+	H.eq("B sent you items: 2", G.__tips[2], "B: one tip for two")
+end)
+
+H.case("MOD-QCT-017 empty nick goes straight to xrRazom", function()
+	local G, _, _, net = gift_setup()
+	G.OnPeerGiftReceived("")
+	H.same({ "" }, net.calls, "at once")
+	G.__clock = 1000
+	G.SendScriptCallback("actor_on_update")
+	H.eq(0, #G.__tips, "no tip")
+end)
