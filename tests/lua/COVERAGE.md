@@ -72,6 +72,7 @@ discharge, one ammo box of `craft_item_r[2]`, `craft_item_r[2]` results, lead bo
 | MOD-QCT-013 | MOD-QCT-013 peer: Craft runs inside the xrRazom peer-chain window |
 | MOD-QCT-014 | manual (dialog layout on 4:3 / 16:9 / 21:9) |
 | MOD-QCT-015 | manual (co-op: batch craft and give on a peer, counts match on host and peer) |
+| MOD-QCT-016 | MOD-QCT-016 eng, rus, ukr, spa, fra, ptb: same ids and %s counts as eng, GAMMA encodings |
 
 Mutation check (2026-10-26): no lead box skip, no busy block, no ammo split, give without the owner check, hotkey ignoring
 modifiers, no peer-chain window, reversed multi-use order — each failed exactly its requirement's case.

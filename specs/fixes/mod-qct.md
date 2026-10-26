@@ -1,5 +1,5 @@
 # MOD-QCT: Quantity Craft and Transfer — «Сколько?» для крафта, переноса и передачи
-Статус: черновик        Проверка в игре: не проводилась        Мод: `Quantity Craft and Transfer`        Скрипты: `gamedata/scripts/qct_main.script`, `gamedata/scripts/qct_dialog.script`, `gamedata/scripts/qct_mcm.script`, интерфейс: `gamedata/configs/ui/ui_qct_dialog.xml`, строки: `gamedata/configs/text/{eng,rus}/st_qct.xml`
+Статус: черновик        Проверка в игре: не проводилась        Мод: `Quantity Craft and Transfer`        Скрипты: `gamedata/scripts/qct_main.script`, `gamedata/scripts/qct_dialog.script`, `gamedata/scripts/qct_mcm.script`, интерфейс: `gamedata/configs/ui/ui_qct_dialog.xml`, строки: `gamedata/configs/text/{eng,rus,ukr,spa,fra,ptb}/st_qct.xml`
 Где ставить: оба (через секцию «xrRazom Sync»; работает и в соло, передача игроку — только в коопе)        Зависит от: Serious Workshop optimization (`ui_workshop.UIWorkshopCraft`), Craft From Stashes, Keep Crafting Window Open (действующий `Craft`), Tronex `ui_inventory`, MCM, xrRazom (`XrrPlayers`, `XrrNet`) — все необязательны        Лог-маркер: `[QCT] workshop: batch crafting installed`, `[QCT] inventory: move quantity installed`
 
 Собственный мод (не фикс): диалог «Сколько?» в стиле Fallout: New Vegas — ползунок, поле ручного ввода, `-`/`+`,
@@ -141,6 +141,14 @@ Serious Workshop, Craft From Stashes и FX-WSAMMO), один раз на кла�
 У пира xrRazom вызов `Craft` ДОЛЖЕН идти между `SetPeerChainWindow(true)` и `SetPeerChainWindow(false)`.
 - Дано `XrrIsHost() == false`. Когда ОК. Тогда `Craft` вызван при открытом окне, после — окно закрыто.
 
+### MOD-QCT-016 Локализации GAMMA  [auto]
+Мод ДОЛЖЕН нести `st_qct.xml` для всех языков, на которые в GAMMA есть переводы модов: `eng`, `rus`, `ukr`, `spa`, `fra`,
+`ptb` (папки `gamedata/configs/text/<язык>` в модах сборки). В каждом файле ДОЛЖЕН быть тот же набор `id`, что в `eng`,
+с тем же числом `%s` в каждой строке (порядок аргументов `strformat` один), и объявление кодировки как у переводов GAMMA:
+`windows-1251` для `eng`/`rus`/`ukr`, `windows-1252` для `spa`/`fra`/`ptb`. X-Ray грузит строки только выбранного языка,
+поэтому без файла языка в меню и диалоге видны id вместо текста.
+- Дано `spa/st_qct.xml` без `st_qct_give_ctx`. Тогда тест падает с именем языка и id.
+
 ### MOD-QCT-014 Вид диалога  [manual]
 Все элементы диалога ДОЛЖНЫ быть внутри панели на 4:3, 16:9 и 21:9.
 
@@ -162,6 +170,8 @@ Serious Workshop, Craft From Stashes и FX-WSAMMO), один раз на кла�
   проблема, не этого мода.
 - Если цепочка `Craft` создаёт результат не через `alife_create_item`, отчёт покажет «скрафчено 0» [НЕ ПРОВЕРЕНО].
 - Передача: подтверждение получения от xrRazom не ждём; каждый id отправляется один раз, дальше — логика `SendGiveItem` движка.
+- Переводы `ukr`, `spa`, `fra`, `ptb` сделаны без носителей языка; правки приветствуются. Другие языки Anomaly (`pol`, `ger`,
+  `ita`, `chs`, `cze`) не добавлены: в модах GAMMA их переводов нет.
 
 ## Проверка в игре
 1. В логе: `[QCT] workshop: batch crafting installed`, `[QCT] inventory: move quantity installed`.

@@ -442,3 +442,31 @@ H.case("MOD-QCT-013 peer: Craft runs inside the xrRazom peer-chain window", func
 	H.same({ true }, w.chain_open, "window open during Craft")
 	H.eq(false, w.peer_window, "closed after")
 end)
+
+-- MOD-QCT-016: every GAMMA language ships the same strings as eng
+local LANGS = { eng = "windows-1251", rus = "windows-1251", ukr = "windows-1251",
+	spa = "windows-1252", fra = "windows-1252", ptb = "windows-1252" }
+
+local function read_strings(lang)
+	local src = H.read_file(H.root .. "/mods/" .. MOD .. "/gamedata/configs/text/" .. lang .. "/st_qct.xml")
+	local t, n = {}, 0
+	for id, text in string.gmatch(src, '<string id="([^"]+)">%s*<text>(.-)</text>') do
+		local _, args = string.gsub(text, "%%s", "")
+		t[id] = args
+		n = n + 1
+	end
+	return t, n, string.match(src, '^<%?xml version="1.0" encoding="([^"]+)"')
+end
+
+H.case("MOD-QCT-016 eng, rus, ukr, spa, fra, ptb: same ids and %s counts as eng, GAMMA encodings", function()
+	local base, count = read_strings("eng")
+	H.truthy(count > 30, "eng has the strings")
+	for lang, enc in pairs(LANGS) do
+		local t, n, decl = read_strings(lang)
+		H.eq(enc, decl, lang .. " encoding")
+		H.eq(count, n, lang .. " string count")
+		for id, args in pairs(base) do
+			H.eq(args, t[id], lang .. " " .. id .. " (%s count, nil = missing)")
+		end
+	end
+end)
