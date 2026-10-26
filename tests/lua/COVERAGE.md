@@ -23,6 +23,7 @@ Third-party modules are replaced by small stand-ins that copy the signatures and
 | FX-TGEN-009 | FX-TGEN-009 wraps on actor_on_first_update once; results and errors pass through | test_tgen.lua |
 | FX-TGEN-010 | FX-TGEN-010 summary after 1 s idle: totals, nested time inside callers, top list; under 5 ms (nested time counted once): no summary, counters reset | test_tgen.lua |
 | FX-TGEN-011 | manual (in game: host lag on a cold Taskboard refresh, taskprof summary) | — |
+| FX-TGEN-012 | FX-TGEN-012 preconditions that read the dialog NPC are never answered from the memo; without mob_trade the memo works as before | test_tgen.lua |
 
 ### MOD-LOOTCLAIM (Combined GAMMA NPC Loot Claim, folder name read from pack.json) — test_lootclaim.lua
 

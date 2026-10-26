@@ -120,9 +120,17 @@ local function setup(opts)
 	G.xr_conditions = opts.no_prereq and {} or {
 		has_completed_task_prerequisites = function(actor, npc, p, extra)
 			G.__prereq[#G.__prereq + 1] = { actor = actor, npc = npc, id = p and p[1], extra = extra }
+			if G.__boom and G.__boom == (p and p[1]) then error("precondition failed", 0) end
+			-- like validate_measure_task: asks for the dialog NPC and answers for that NPC only
+			if G.__by_npc and G.__by_npc[p and p[1]] then
+				return G.mob_trade.GetTalkingNpc():id() == G.__by_npc[p[1]]
+			end
 			return (G.__answers or {})[p and p[1]] ~= false
 		end,
 	}
+	if opts.mob_trade then
+		G.mob_trade = { GetTalkingNpc = function() return { id = function() return G.__talking end } end }
+	end
 	make_world(G, opts.objs or {})
 	if opts.debug then G.debug = opts.debug end
 	if not opts.no_bounty then
@@ -188,6 +196,39 @@ H.case("FX-TGEN-003 calls with an actor, an npc or no task id always reach the o
 	H.eq("x", G.__prereq[3].extra, "extra argument passed")
 	prereq(G, "t1")
 	H.eq(6, #G.__prereq, "logic calls stored nothing")
+end)
+
+H.case("FX-TGEN-012 preconditions that read the dialog NPC are never answered from the memo", function()
+	local G = setup({ mob_trade = true })
+	local talking = G.mob_trade.GetTalkingNpc
+	G.__by_npc = { m1 = 1 }
+	G.__talking = 1
+	H.eq(true, prereq(G, "m1"), "NPC 1")
+	G.__now, G.__talking = 100, 2
+	H.eq(false, prereq(G, "m1"), "NPC 2 gets its own answer")
+	H.eq(2, #G.__prereq, "original asked both times")
+	H.truthy(G.mob_trade.GetTalkingNpc == talking, "GetTalkingNpc restored")
+	G.__by_npc = nil
+	G.__now = 200
+	prereq(G, "m1")
+	G.__now = 300
+	prereq(G, "m1")
+	H.eq(4, #G.__prereq, "stays NPC-bound even when it no longer asks")
+	prereq(G, "t1")
+	prereq(G, "t1")
+	H.eq(5, #G.__prereq, "other tasks still memoized")
+	G.__boom = "e1"
+	local ok, err = pcall(prereq, G, "e1")
+	H.falsy(ok, "error re-raised")
+	H.eq("precondition failed", err, "same error")
+	H.truthy(G.mob_trade.GetTalkingNpc == talking, "GetTalkingNpc restored after an error")
+end)
+
+H.case("FX-TGEN-012 without mob_trade the memo works as before", function()
+	local G = setup()
+	prereq(G, "t1")
+	prereq(G, "t1")
+	H.eq(1, #G.__prereq, "memoized")
 end)
 
 H.case("FX-TGEN-004 on_level_changing clears the memo and the bounty snapshot", function()
