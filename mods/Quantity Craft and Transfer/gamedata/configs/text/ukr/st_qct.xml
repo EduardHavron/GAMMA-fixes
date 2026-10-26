@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+	<string id="st_qct_how_many">
+		<text>Скільки?</text>
+	</string>
+	<string id="st_qct_ok">
+		<text>OK</text>
+	</string>
+	<string id="st_qct_cancel">
+		<text>Скасувати</text>
+	</string>
+	<string id="st_qct_max">
+		<text>Макс.</text>
+	</string>
+	<string id="st_qct_craft_ctx">
+		<text>Створити кілька...</text>
+	</string>
+	<string id="st_qct_move_ctx">
+		<text>Перемістити кілька...</text>
+	</string>
+	<string id="st_qct_craft_info">
+		<text>Можна створити: %s</text>
+	</string>
+	<string id="st_qct_move_info">
+		<text>У стосі: %s (спершу найкращі)</text>
+	</string>
+	<string id="st_qct_craft_done">
+		<text>%s створено: %s</text>
+	</string>
+	<string id="st_qct_craft_stopped">
+		<text>%s: створено %s з %s.</text>
+	</string>
+	<string id="st_qct_stop_materials">
+		<text>Не вистачає матеріалів або інструментів.</text>
+	</string>
+	<string id="st_qct_stop_recipe">
+		<text>Вибраний рецепт змінився.</text>
+	</string>
+	<string id="st_qct_stop_error">
+		<text>Помилка створення, дивіться лог.</text>
+	</string>
+	<string id="st_qct_moved_less">
+		<text>Переміщено %s з %s: решта вже недоступна.</text>
+	</string>
+	<string id="st_qct_craft_info_units">
+		<text>Можна створити: %s - результат: %s шт.</text>
+	</string>
+	<string id="st_qct_move_info_units">
+		<text>У стосі: %s шт. - буде переміщено: %s шт.</text>
+	</string>
+	<string id="st_qct_wait">
+		<text>Зачекайте: попереднє створення ще обробляється.</text>
+	</string>
+	<string id="st_qct_warn_sync">
+		<text>Використані матеріали зникають повільно - перевірте інвентар.</text>
+	</string>
+	<string id="st_qct_give_ctx">
+		<text>Передати кілька: %s</text>
+	</string>
+	<string id="st_qct_give_info">
+		<text>Кому: %s - у стосі: %s</text>
+	</string>
+	<string id="st_qct_give_info_units">
+		<text>Кому: %s - буде передано: %s шт.</text>
+	</string>
+	<string id="st_qct_gave">
+		<text>Передано гравцю %s: %s з %s.</text>
+	</string>
+	<string id="st_qct_give_less">
+		<text>Решти вже немає у вашому інвентарі.</text>
+	</string>
+	<string id="st_qct_give_far">
+		<text>Гравець відійшов далі ніж на 5 м або вийшов - передачу зупинено.</text>
+	</string>
+	<string id="st_qct_give_busy">
+		<text>Зачекайте: попередня передача ще триває.</text>
+	</string>
+
+	<string id="ui_mcm_menu_qct">
+		<text>Quantity Craft and Transfer</text>
+	</string>
+	<string id="ui_mcm_qct_desc">
+		<text>Діалог «Скільки?» для створення на верстаті та переміщення стосів у схованках і торгівлі. Відкривається з меню правої кнопки миші або гарячою клавішею нижче. Позначені модифікатори треба утримувати, непозначені - ні, тож Y, Alt+Y і Ctrl+Shift+Y - різні клавіші.</text>
+	</string>
+	<string id="ui_mcm_qct_key">
+		<text>Гаряча клавіша</text>
+	</string>
+	<string id="ui_mcm_qct_key_desc">
+		<text>Верстат: відкриває діалог для рецепта під курсором або вибраного. Схованка / торгівля: для стосу під курсором. Власний інвентар у коопі: передати найближчому гравцеві.</text>
+	</string>
+	<string id="ui_mcm_qct_mod_ctrl">
+		<text>Гаряча клавіша: утримувати Ctrl</text>
+	</string>
+	<string id="ui_mcm_qct_mod_shift">
+		<text>Гаряча клавіша: утримувати Shift</text>
+	</string>
+	<string id="ui_mcm_qct_mod_alt">
+		<text>Гаряча клавіша: утримувати Alt</text>
+	</string>
+	<string id="ui_mcm_qct_ctx_craft">
+		<text>«Створити кілька...» у меню рецепта (права кнопка миші)</text>
+	</string>
+	<string id="ui_mcm_qct_ctx_move">
+		<text>«Перемістити кілька...» у меню предмета (права кнопка миші)</text>
+	</string>
+	<string id="ui_mcm_qct_ctx_give">
+		<text>«Передати кілька: гравець» у меню предмета (кооп xrRazom)</text>
+	</string>
+	<string id="ui_mcm_qct_start_max">
+		<text>Повзунок починає з максимуму</text>
+	</string>
+	<string id="ui_mcm_qct_craft_cap">
+		<text>Максимум створень за раз</text>
+	</string>
+	<string id="ui_mcm_qct_craft_cap_desc">
+		<text>Верхня межа повзунка під час створення.</text>
+	</string>
+</string_table>

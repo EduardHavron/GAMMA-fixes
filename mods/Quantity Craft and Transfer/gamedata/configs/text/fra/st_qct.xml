@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="windows-1252"?>
+<string_table>
+	<string id="st_qct_how_many">
+		<text>Combien ?</text>
+	</string>
+	<string id="st_qct_ok">
+		<text>OK</text>
+	</string>
+	<string id="st_qct_cancel">
+		<text>Annuler</text>
+	</string>
+	<string id="st_qct_max">
+		<text>Max</text>
+	</string>
+	<string id="st_qct_craft_ctx">
+		<text>Fabriquer plusieurs...</text>
+	</string>
+	<string id="st_qct_move_ctx">
+		<text>Déplacer plusieurs...</text>
+	</string>
+	<string id="st_qct_craft_info">
+		<text>Fabricables : %s</text>
+	</string>
+	<string id="st_qct_move_info">
+		<text>Dans la pile : %s (les meilleurs d'abord)</text>
+	</string>
+	<string id="st_qct_craft_done">
+		<text>%s fabriqué : %s</text>
+	</string>
+	<string id="st_qct_craft_stopped">
+		<text>%s : %s fabriqués sur %s.</text>
+	</string>
+	<string id="st_qct_stop_materials">
+		<text>Pas assez de matériaux ou d'outils.</text>
+	</string>
+	<string id="st_qct_stop_recipe">
+		<text>La recette sélectionnée a changé.</text>
+	</string>
+	<string id="st_qct_stop_error">
+		<text>Erreur de fabrication, voir le journal.</text>
+	</string>
+	<string id="st_qct_moved_less">
+		<text>%s déplacés sur %s : le reste n'est plus disponible.</text>
+	</string>
+	<string id="st_qct_craft_info_units">
+		<text>Fabricables : %s - résultat : %s pcs</text>
+	</string>
+	<string id="st_qct_move_info_units">
+		<text>Dans la pile : %s pcs - seront déplacés : %s pcs</text>
+	</string>
+	<string id="st_qct_wait">
+		<text>Patientez : la fabrication précédente est encore en cours.</text>
+	</string>
+	<string id="st_qct_warn_sync">
+		<text>Les matériaux utilisés tardent à disparaître - vérifiez votre inventaire.</text>
+	</string>
+	<string id="st_qct_give_ctx">
+		<text>Donner plusieurs : %s</text>
+	</string>
+	<string id="st_qct_give_info">
+		<text>À : %s - dans la pile : %s</text>
+	</string>
+	<string id="st_qct_give_info_units">
+		<text>À : %s - seront donnés : %s pcs</text>
+	</string>
+	<string id="st_qct_gave">
+		<text>Donné à %s : %s sur %s.</text>
+	</string>
+	<string id="st_qct_give_less">
+		<text>Le reste n'est plus dans votre inventaire.</text>
+	</string>
+	<string id="st_qct_give_far">
+		<text>Le joueur s'est éloigné de plus de 5 m ou est parti - don interrompu.</text>
+	</string>
+	<string id="st_qct_give_busy">
+		<text>Patientez : le don précédent est encore en cours.</text>
+	</string>
+
+	<string id="ui_mcm_menu_qct">
+		<text>Quantity Craft and Transfer</text>
+	</string>
+	<string id="ui_mcm_qct_desc">
+		<text>Fenêtre "Combien ?" pour fabriquer à l'établi et déplacer des piles dans les caches et le commerce. S'ouvre depuis le menu du clic droit ou avec le raccourci ci-dessous. Les modificateurs cochés doivent être maintenus, les autres non : Y, Alt+Y et Ctrl+Shift+Y sont donc des raccourcis différents.</text>
+	</string>
+	<string id="ui_mcm_qct_key">
+		<text>Raccourci</text>
+	</string>
+	<string id="ui_mcm_qct_key_desc">
+		<text>Établi : ouvre la fenêtre pour la recette survolée ou sélectionnée. Cache / commerce : pour la pile survolée. Inventaire personnel en coop : donner au joueur le plus proche.</text>
+	</string>
+	<string id="ui_mcm_qct_mod_ctrl">
+		<text>Raccourci : maintenir Ctrl</text>
+	</string>
+	<string id="ui_mcm_qct_mod_shift">
+		<text>Raccourci : maintenir Shift</text>
+	</string>
+	<string id="ui_mcm_qct_mod_alt">
+		<text>Raccourci : maintenir Alt</text>
+	</string>
+	<string id="ui_mcm_qct_ctx_craft">
+		<text>"Fabriquer plusieurs..." dans le menu du clic droit de la recette</text>
+	</string>
+	<string id="ui_mcm_qct_ctx_move">
+		<text>"Déplacer plusieurs..." dans le menu du clic droit de l'objet</text>
+	</string>
+	<string id="ui_mcm_qct_ctx_give">
+		<text>"Donner plusieurs : joueur" dans le menu du clic droit de l'objet (coop xrRazom)</text>
+	</string>
+	<string id="ui_mcm_qct_start_max">
+		<text>Le curseur commence au maximum</text>
+	</string>
+	<string id="ui_mcm_qct_craft_cap">
+		<text>Fabrications max. par lot</text>
+	</string>
+	<string id="ui_mcm_qct_craft_cap_desc">
+		<text>Limite haute du curseur lors de la fabrication.</text>
+	</string>
+</string_table>

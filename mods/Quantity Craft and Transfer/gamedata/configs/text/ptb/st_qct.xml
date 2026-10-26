@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="windows-1252"?>
+<string_table>
+	<string id="st_qct_how_many">
+		<text>Quantos?</text>
+	</string>
+	<string id="st_qct_ok">
+		<text>OK</text>
+	</string>
+	<string id="st_qct_cancel">
+		<text>Cancelar</text>
+	</string>
+	<string id="st_qct_max">
+		<text>Máx.</text>
+	</string>
+	<string id="st_qct_craft_ctx">
+		<text>Fabricar vários...</text>
+	</string>
+	<string id="st_qct_move_ctx">
+		<text>Mover vários...</text>
+	</string>
+	<string id="st_qct_craft_info">
+		<text>Pode fabricar: %s</text>
+	</string>
+	<string id="st_qct_move_info">
+		<text>Na pilha: %s (os melhores primeiro)</text>
+	</string>
+	<string id="st_qct_craft_done">
+		<text>%s fabricado: %s</text>
+	</string>
+	<string id="st_qct_craft_stopped">
+		<text>%s: fabricados %s de %s.</text>
+	</string>
+	<string id="st_qct_stop_materials">
+		<text>Faltam materiais ou ferramentas.</text>
+	</string>
+	<string id="st_qct_stop_recipe">
+		<text>A receita selecionada mudou.</text>
+	</string>
+	<string id="st_qct_stop_error">
+		<text>Erro de fabricação, veja o log.</text>
+	</string>
+	<string id="st_qct_moved_less">
+		<text>Movidos %s de %s: o resto não está mais disponível.</text>
+	</string>
+	<string id="st_qct_craft_info_units">
+		<text>Pode fabricar: %s - resultado: %s un.</text>
+	</string>
+	<string id="st_qct_move_info_units">
+		<text>Na pilha: %s un. - serão movidos: %s un.</text>
+	</string>
+	<string id="st_qct_wait">
+		<text>Aguarde: a fabricação anterior ainda está sendo processada.</text>
+	</string>
+	<string id="st_qct_warn_sync">
+		<text>Os materiais usados demoram a sumir - verifique seu inventário.</text>
+	</string>
+	<string id="st_qct_give_ctx">
+		<text>Dar vários: %s</text>
+	</string>
+	<string id="st_qct_give_info">
+		<text>Para: %s - na pilha: %s</text>
+	</string>
+	<string id="st_qct_give_info_units">
+		<text>Para: %s - serão dados: %s un.</text>
+	</string>
+	<string id="st_qct_gave">
+		<text>Dado a %s: %s de %s.</text>
+	</string>
+	<string id="st_qct_give_less">
+		<text>O resto não está mais no seu inventário.</text>
+	</string>
+	<string id="st_qct_give_far">
+		<text>O jogador se afastou mais de 5 m ou saiu - entrega interrompida.</text>
+	</string>
+	<string id="st_qct_give_busy">
+		<text>Aguarde: a entrega anterior ainda está em andamento.</text>
+	</string>
+
+	<string id="ui_mcm_menu_qct">
+		<text>Quantity Craft and Transfer</text>
+	</string>
+	<string id="ui_mcm_qct_desc">
+		<text>Diálogo "Quantos?" para fabricar na bancada e mover pilhas em esconderijos e no comércio. Abre pelo menu do clique direito ou pela tecla de atalho abaixo. Modificadores marcados precisam estar pressionados e os desmarcados não, então Y, Alt+Y e Ctrl+Shift+Y são atalhos diferentes.</text>
+	</string>
+	<string id="ui_mcm_qct_key">
+		<text>Tecla de atalho</text>
+	</string>
+	<string id="ui_mcm_qct_key_desc">
+		<text>Bancada: abre o diálogo da receita sob o cursor ou selecionada. Esconderijo / comércio: da pilha sob o cursor. Inventário próprio no cooperativo: dar ao jogador mais próximo.</text>
+	</string>
+	<string id="ui_mcm_qct_mod_ctrl">
+		<text>Atalho: segurar Ctrl</text>
+	</string>
+	<string id="ui_mcm_qct_mod_shift">
+		<text>Atalho: segurar Shift</text>
+	</string>
+	<string id="ui_mcm_qct_mod_alt">
+		<text>Atalho: segurar Alt</text>
+	</string>
+	<string id="ui_mcm_qct_ctx_craft">
+		<text>"Fabricar vários..." no menu do clique direito da receita</text>
+	</string>
+	<string id="ui_mcm_qct_ctx_move">
+		<text>"Mover vários..." no menu do clique direito do item</text>
+	</string>
+	<string id="ui_mcm_qct_ctx_give">
+		<text>"Dar vários: jogador" no menu do clique direito do item (cooperativo xrRazom)</text>
+	</string>
+	<string id="ui_mcm_qct_start_max">
+		<text>O controle deslizante começa no máximo</text>
+	</string>
+	<string id="ui_mcm_qct_craft_cap">
+		<text>Máximo de fabricações por lote</text>
+	</string>
+	<string id="ui_mcm_qct_craft_cap_desc">
+		<text>Limite superior do controle deslizante ao fabricar.</text>
+	</string>
+</string_table>

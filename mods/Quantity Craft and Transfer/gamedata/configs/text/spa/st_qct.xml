@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="windows-1252"?>
+<string_table>
+	<string id="st_qct_how_many">
+		<text>¿Cuántos?</text>
+	</string>
+	<string id="st_qct_ok">
+		<text>Aceptar</text>
+	</string>
+	<string id="st_qct_cancel">
+		<text>Cancelar</text>
+	</string>
+	<string id="st_qct_max">
+		<text>Máx.</text>
+	</string>
+	<string id="st_qct_craft_ctx">
+		<text>Fabricar varios...</text>
+	</string>
+	<string id="st_qct_move_ctx">
+		<text>Mover varios...</text>
+	</string>
+	<string id="st_qct_craft_info">
+		<text>Se pueden fabricar: %s</text>
+	</string>
+	<string id="st_qct_move_info">
+		<text>En la pila: %s (primero los mejores)</text>
+	</string>
+	<string id="st_qct_craft_done">
+		<text>%s fabricado: %s</text>
+	</string>
+	<string id="st_qct_craft_stopped">
+		<text>%s: fabricados %s de %s.</text>
+	</string>
+	<string id="st_qct_stop_materials">
+		<text>Faltan materiales o herramientas.</text>
+	</string>
+	<string id="st_qct_stop_recipe">
+		<text>La receta seleccionada ha cambiado.</text>
+	</string>
+	<string id="st_qct_stop_error">
+		<text>Error de fabricación, revisa el registro.</text>
+	</string>
+	<string id="st_qct_moved_less">
+		<text>Movidos %s de %s: el resto ya no está disponible.</text>
+	</string>
+	<string id="st_qct_craft_info_units">
+		<text>Se pueden fabricar: %s - resultado: %s uds.</text>
+	</string>
+	<string id="st_qct_move_info_units">
+		<text>En la pila: %s uds. - se moverán: %s uds.</text>
+	</string>
+	<string id="st_qct_wait">
+		<text>Espera: la fabricación anterior aún se está procesando.</text>
+	</string>
+	<string id="st_qct_warn_sync">
+		<text>Los materiales usados tardan en desaparecer - revisa tu inventario.</text>
+	</string>
+	<string id="st_qct_give_ctx">
+		<text>Dar varios: %s</text>
+	</string>
+	<string id="st_qct_give_info">
+		<text>Para: %s - en la pila: %s</text>
+	</string>
+	<string id="st_qct_give_info_units">
+		<text>Para: %s - se darán: %s uds.</text>
+	</string>
+	<string id="st_qct_gave">
+		<text>Dado a %s: %s de %s.</text>
+	</string>
+	<string id="st_qct_give_less">
+		<text>El resto ya no está en tu inventario.</text>
+	</string>
+	<string id="st_qct_give_far">
+		<text>El jugador se alejó más de 5 m o se fue - entrega detenida.</text>
+	</string>
+	<string id="st_qct_give_busy">
+		<text>Espera: la entrega anterior sigue en curso.</text>
+	</string>
+
+	<string id="ui_mcm_menu_qct">
+		<text>Quantity Craft and Transfer</text>
+	</string>
+	<string id="ui_mcm_qct_desc">
+		<text>Diálogo "¿Cuántos?" para fabricar en el banco de trabajo y mover pilas en alijos y comercio. Se abre desde el menú del clic derecho o con la tecla de abajo. Los modificadores marcados deben mantenerse pulsados y los no marcados no, así que Y, Alt+Y y Ctrl+Shift+Y son atajos distintos.</text>
+	</string>
+	<string id="ui_mcm_qct_key">
+		<text>Tecla rápida</text>
+	</string>
+	<string id="ui_mcm_qct_key_desc">
+		<text>Banco de trabajo: abre el diálogo de la receta bajo el cursor o seleccionada. Alijo / comercio: de la pila bajo el cursor. Inventario propio en cooperativo: dar al jugador más cercano.</text>
+	</string>
+	<string id="ui_mcm_qct_mod_ctrl">
+		<text>Tecla rápida: mantener Ctrl</text>
+	</string>
+	<string id="ui_mcm_qct_mod_shift">
+		<text>Tecla rápida: mantener Shift</text>
+	</string>
+	<string id="ui_mcm_qct_mod_alt">
+		<text>Tecla rápida: mantener Alt</text>
+	</string>
+	<string id="ui_mcm_qct_ctx_craft">
+		<text>"Fabricar varios..." en el menú de clic derecho de la receta</text>
+	</string>
+	<string id="ui_mcm_qct_ctx_move">
+		<text>"Mover varios..." en el menú de clic derecho del objeto</text>
+	</string>
+	<string id="ui_mcm_qct_ctx_give">
+		<text>"Dar varios: jugador" en el menú de clic derecho del objeto (cooperativo xrRazom)</text>
+	</string>
+	<string id="ui_mcm_qct_start_max">
+		<text>El deslizador empieza en el máximo</text>
+	</string>
+	<string id="ui_mcm_qct_craft_cap">
+		<text>Máximo de fabricaciones por tanda</text>
+	</string>
+	<string id="ui_mcm_qct_craft_cap_desc">
+		<text>Límite superior del deslizador al fabricar.</text>
+	</string>
+</string_table>
