@@ -13,6 +13,9 @@
      preconditions that read the dialog NPC (validate_measure_task) are detected and never shared.
   2. PDA Taskboard Redesign's setup_bounty_task builds target variants with a full scan of all
      65534 server objects (local build_variants) for every bounty task without live variants.
+  3. validate_measure_task (Oleh's Tasks Crash Fixes) and on_init_delivery_task (Tasks QoL) depend on the
+     dialog NPC, so they run per NPC, and each run scans all 65534 server objects again (40-130 ms each;
+     a delivery task without a target rescans on every refresh).
   Fix:
   1. Generation calls of has_completed_task_prerequisites (actor and npc nil) are answered from a
      per-task memo for 5 s, unless the precondition called mob_trade.GetTalkingNpc while it was
@@ -20,6 +23,10 @@
   2. build_variants is swapped (debug.setupvalue in variant_list) for one that takes candidates
      from a shared snapshot of the same scan, kept for 5 s, using the mod's own filters, and checks
      each picked candidate with the mod's candidate_valid.
+  3. One world scan per 5 s collects the bounty, anomaly and squad-commander lists. Copies of
+     validate_measure_task and on_init_delivery_task take their targets from it; they are put where the
+     originals sit in the wrapper chain (xrRazom's host guard and G_FLAT's wrapper stay on top) and keep
+     filling the mods' own per-NPC caches.
 ]]
 
 local MEMO_MS = 5000
@@ -31,7 +38,7 @@ local function L(s) printf("%s", "[XRRFIX] tgen: " .. s) end
 
 local memo = {}          -- task_id -> { t = time_global(), v = result }
 local npc_bound = {}     -- task_id -> true: its precondition reads the dialog NPC, never memoized
-local snapshot = nil     -- { t = time_global(), list = { {id, comm, rela, map, near}, ... } }
+local snapshot = nil     -- { t = time_global(), lists = { bounty = {...}, measure = {...}, delivery = {...} } }
 local stats = { hits = 0, misses = 0, built = 0, reused = 0 }
 
 -- Counters for zz_xrrfix_tgen_prof; returns them and starts new ones.
@@ -99,8 +106,47 @@ local function install_memo()
 end
 
 ---------------------------------------------------------------------------
--- 2. shared bounty scan
+-- 2. one world scan shared by bounty, measure and delivery tasks
 ---------------------------------------------------------------------------
+-- Each part registers a collector: called for every server object of the scan, it returns an
+-- entry for its own list or nil. The scan runs at most once per SNAPSHOT_MS (level change resets it).
+
+local collectors = {}    -- name -> function(id, se_obj, ctx) -> entry | nil
+
+local function scan_world()
+	local lists = {}
+	for name in pairs(collectors) do lists[name] = {} end
+	local sim = alife()
+	local ctx = { sim = sim, se_actor = sim:actor(), gg = game_graph() }
+	for id = 1, MAX_ID do
+		local se_obj = sim:object(id)
+		if se_obj then
+			for name, collect in pairs(collectors) do
+				local e = collect(id, se_obj, ctx)
+				if e then
+					local l = lists[name]
+					l[#l + 1] = e
+				end
+			end
+		end
+	end
+	return lists
+end
+
+local function world_list(name)
+	local now = time_global()
+	if snapshot and now - snapshot.t < SNAPSHOT_MS then
+		stats.reused = stats.reused + 1
+	else
+		stats.built = stats.built + 1
+		snapshot = { t = now, lists = scan_world() }
+	end
+	return snapshot.lists[name] or {}
+end
+
+local function level_of_vertex(ctx, se_obj)
+	return ctx.sim:level_name(ctx.gg:vertex(se_obj.m_game_vertex_id):level_id())
+end
 
 local function upvalues(fn, out)
 	if type(fn) ~= "function" then return out end
@@ -120,12 +166,59 @@ local function upvalue_index(fn, wanted)
 	end
 end
 
+local function has_upvalues(fn, names)
+	if type(fn) ~= "function" then return false end
+	local u = upvalues(fn, {})
+	for _, n in ipairs(names) do
+		if u[n] == nil then return false end
+	end
+	return true
+end
+
+-- Finds the original function in the wrapper chain at tbl[key] (wrappers keep it as an upvalue, e.g.
+-- xrRazom's host-only guard or G_FLAT's More Measurement Task Maps): the first function that has all
+-- `names` as upvalues. Returns it and a function that puts a replacement exactly where it sits.
+local function find_original(tbl, key, names)
+	local top = tbl and tbl[key]
+	if type(top) ~= "function" then return nil end
+	if has_upvalues(top, names) then
+		return top, function(new) tbl[key] = new end
+	end
+	local seen = {}
+	local function search(fn, depth)
+		if depth > 4 or seen[fn] then return nil end
+		seen[fn] = true
+		for i = 1, 200 do
+			local name, v = debug.getupvalue(fn, i)
+			if name == nil then break end
+			if type(v) == "function" then
+				if has_upvalues(v, names) then
+					return v, function(new) debug.setupvalue(fn, i, new) end
+				end
+				local o, put = search(v, depth + 1)
+				if o then return o, put end
+			end
+		end
+	end
+	return search(top, 1)
+end
+
+local ours = setmetatable({}, { __mode = "k" }) -- replacements installed by this script
+
+local function debug_ok()
+	return debug and debug.getupvalue and debug.setupvalue and true or false
+end
+
+---------------------------------------------------------------------------
+-- 2a. bounty (PDA Taskboard Redesign: z_taskboard_bounty_variants.build_variants)
+---------------------------------------------------------------------------
+
 -- candidate_relation() with this lookup accepts every faction
 local ANY_FACTION = setmetatable({}, { __index = function() return true end })
 
 local function install_bounty()
 	local skip = "Taskboard bounty selector not found, bounty part skipped"
-	if not (debug and debug.getupvalue and debug.setupvalue) then L(skip) return end
+	if not debug_ok() then L(skip) return end
 	local mod = z_taskboard_bounty_variants
 	local gvi = mod and mod.GetVariantInfo
 	if type(gvi) ~= "function" then L(skip) return end
@@ -152,40 +245,21 @@ local function install_bounty()
 		return
 	end
 
-	local function scan()
-		local list = {}
-		local sim = alife()
-		local se_actor = sim:actor()
-		for id = 1, MAX_ID do
-			local se_obj = sim:object(id)
-			if se_obj then
-				local rela = candidate_relation(id, se_obj, ANY_FACTION)
-				if rela and is_smart_valid(se_obj.group_id) then
-					local map = level_of(se_obj)
-					if map and not blacklisted_maps[map] then
-						list[#list + 1] = {
-							id = id,
-							comm = alife_character_community(se_obj),
-							rela = rela,
-							map = map,
-							near = simulation_objects.is_on_the_nearby_level(se_actor, se_obj) and true or false,
-						}
-					end
-				end
+	-- the original's filter without the faction lookup (applied per task)
+	collectors.bounty = function(id, se_obj, ctx)
+		local rela = candidate_relation(id, se_obj, ANY_FACTION)
+		if rela and is_smart_valid(se_obj.group_id) then
+			local map = level_of(se_obj)
+			if map and not blacklisted_maps[map] then
+				return {
+					id = id,
+					comm = alife_character_community(se_obj),
+					rela = rela,
+					map = map,
+					near = simulation_objects.is_on_the_nearby_level(ctx.se_actor, se_obj) and true or false,
+				}
 			end
 		end
-		return list
-	end
-
-	local function get_snapshot()
-		local now = time_global()
-		if snapshot and now - snapshot.t < SNAPSHOT_MS then
-			stats.reused = stats.reused + 1
-			return snapshot.list
-		end
-		stats.built = stats.built + 1
-		snapshot = { t = now, list = scan() }
-		return snapshot.list
 	end
 
 	local function build_variants(task_id, p)
@@ -193,7 +267,7 @@ local function install_bounty()
 		local extra = selected_blacklist()
 		local valid = { enemy = {}, neutral = {} }
 		local other = { enemy = {}, neutral = {} }
-		for _, c in ipairs(get_snapshot()) do
+		for _, c in ipairs(world_list("bounty")) do
 			if lookup[c.comm] == true and not (extra and extra[c.map]) then
 				local bucket = (p[3] == "true" and not c.near) and other or valid
 				local group = bucket[c.rela]
@@ -219,11 +293,297 @@ local function install_bounty()
 	L(fmt("bounty scan shared (snapshot %d ms)", SNAPSHOT_MS))
 end
 
+---------------------------------------------------------------------------
+-- 2b. measure tasks (Oleh's Tasks Crash Fixes / Tasks QoL tasks_measure.validate_measure_task)
+---------------------------------------------------------------------------
+-- A copy of the original precondition; only its `for i = 1, 65534 do sim:object(i)` scan is replaced by
+-- the shared anomaly list. It still runs per dialog NPC and fills the module's own
+-- cache[task_id][task_giver_id], which setup_measure_task reads when the task is given.
+
+local function install_measure()
+	local skip = "validate_measure_task not recognised, measure part skipped"
+	if not debug_ok() then L(skip) return end
+	local orig, put = find_original(xr_conditions, "validate_measure_task", { "cache", "anomaly_types" })
+	if not orig then L(skip) return end
+	if ours[orig] then return end
+	local u = upvalues(orig, {})
+	local cache, anomaly_types = u.cache, u.anomaly_types
+	local bl_upvalue = u.blacklisted_maps -- a module variable instead when an unlocalizer opened it
+	if not (type(cache) == "table" and type(anomaly_types) == "table") then L(skip) return end
+
+	local function blacklisted_maps()
+		return bl_upvalue or (tasks_measure and tasks_measure.blacklisted_maps) or {}
+	end
+
+	local all_secs = {}
+	for _, v in pairs(anomaly_types) do
+		for sec in pairs(v) do all_secs[sec] = true end
+	end
+	collectors.measure = function(id, se_obj, ctx)
+		local sec = se_obj:section_name()
+		if all_secs[sec] then
+			return { id = id, sec = sec, lvl = level_of_vertex(ctx, se_obj), online = se_obj.online }
+		end
+	end
+
+	local function validate_measure_task(actor, npc, p)
+		if not (p and (#p >= 5)) then
+			printe("! ERROR - %s | not enough parameters for on_init_measure_task!", p[1])
+			return false
+		end
+		local task_id = p[1]
+
+		if (not db.actor:is_talking()) then
+			printe("! ERROR validate_measure_task | actor is not talking")
+			return
+		end
+		local task_giver = mob_trade.GetTalkingNpc()
+		local task_giver_id = task_giver:id()
+
+		-- Already cached
+		if cache[task_id] and cache[task_id][task_giver_id] then
+			return true
+		end
+
+		-- Gather info
+		local scan_mode = tonumber(p[2]) or 4
+		local monster_allow = (p[3] == "true") and true or false
+		local item_1_sec = ini_sys:section_exist(p[4]) and p[4] or nil
+		if (not item_1_sec) then
+			printe("! ERROR - %s | can't find item section!", task_id)
+			return false
+		end
+		local target_types = {}
+		for i = 5, #p do
+			target_types[p[i]] = true
+		end
+
+		local task_giver_comm = character_community(task_giver)
+
+		local ano_tbl = {}
+		for typ, v in pairs(anomaly_types) do
+			if target_types[typ] then
+				for sec, _ in pairs(v) do
+					ano_tbl[sec] = true
+				end
+			end
+		end
+
+		-- SERIOUS NO NORTH TASKS BEFORE BS AND THE NORTHERN JOB (as in the original)
+		local additionalBlacklist = {}
+		local mcm_scanMode = blacklist_helper.GetMcmDropdownValue()
+		local northernMaps = blacklist_helper.GetNorthernMaps()
+		if mcm_scanMode > 0 then
+			scan_mode = mcm_scanMode
+		end
+		if blacklist_helper.ShouldBlacklistNorth() then
+			additionalBlacklist = northernMaps
+		elseif northernMaps[level.name()] then
+			additionalBlacklist = blacklist_helper.GetSouthernMaps()
+		end
+
+		local targets = {}
+		local blacklisted = blacklisted_maps()
+		local near_maps = simulation_objects.config:r_value(level.name(), "target_maps", 0, "")
+		local dyn_anomalies = bind_anomaly_field and bind_anomaly_field.dyn_anomalies or {}
+		for _, a in ipairs(world_list("measure")) do
+			local lvl_name = a.lvl
+			if ano_tbl[a.sec]
+			and (not blacklisted[lvl_name] and not additionalBlacklist[lvl_name])
+			and (not (dyn_anomalies[lvl_name] and dyn_anomalies[lvl_name][a.id] ~= nil))
+			then
+				local is_online = a.online
+				local is_nearby = string.find(near_maps, lvl_name)
+				if ((scan_mode == 1) and is_online)
+				or ((scan_mode == 2) and (is_online or is_nearby))
+				or ((scan_mode == 3) and is_nearby)
+				or ((scan_mode == 4) and (not (is_online or is_nearby)))
+				or (scan_mode == 5)
+				then
+					targets[#targets + 1] = a.id
+				end
+			end
+		end
+
+		if (#targets == 0) then
+			printf("! %s | No anomaly found!", task_id)
+			return false
+		end
+
+		-- Pick Target
+		local target_id = targets[math.random(#targets)]
+		local se_target = alife_object(target_id)
+		if (not se_target) then
+			printe("! %s | cant get server object of anomaly (%s)!", task_id, target_id)
+			return false
+		end
+
+		-- Cache
+		if (not cache[task_id]) then
+			cache[task_id] = {}
+		end
+		cache[task_id][task_giver_id] = {
+			target_id = target_id,
+			task_giver_comm = task_giver_comm,
+			item_1_sec = item_1_sec,
+			monster = monster_allow
+		}
+
+		return true
+	end
+
+	ours[validate_measure_task] = true
+	put(validate_measure_task)
+	L(fmt("measure scan shared (snapshot %d ms)", SNAPSHOT_MS))
+end
+
+---------------------------------------------------------------------------
+-- 2c. delivery tasks (Tasks QoL tasks_delivery: xr_effects.on_init_delivery_task)
+---------------------------------------------------------------------------
+-- A copy of the original effect; only its 65534-object search for squad commanders is replaced by the
+-- shared list. The faction filter still uses the dialog NPC, results go to the module's delivery_cache.
+
+local function install_delivery()
+	local skip = "on_init_delivery_task not recognised, delivery part skipped"
+	if not debug_ok() then L(skip) return end
+	local orig, put = find_original(xr_effects, "on_init_delivery_task", { "delivery_cache", "faction_list" })
+	if not orig then L(skip) return end
+	if ours[orig] then return end
+	local u = upvalues(orig, {})
+	local delivery_cache, faction_list = u.delivery_cache, u.faction_list
+	if not (type(delivery_cache) == "table" and type(faction_list) == "table") then L(skip) return end
+
+	local sfind = string.find
+	collectors.delivery = function(id, se_obj, ctx)
+		if IsStalker(nil, se_obj:clsid()) and se_obj:alive() and sfind(se_obj:section_name(), "sim_default")
+			and get_object_story_id(id) == nil
+		then
+			local squad = se_obj.group_id and se_obj.group_id ~= 65535 and alife_object(se_obj.group_id)
+			if squad and (squad:commander_id() == se_obj.id) and sfind(squad:section_name(), "sim_squad")
+				and (squad.current_action == 1)
+			then
+				return {
+					id = id,
+					comm = alife_character_community(se_obj),
+					lvl = level_of_vertex(ctx, se_obj),
+					same = simulation_objects.is_on_the_same_level(ctx.se_actor, se_obj) and true or false,
+					linked = simulation_objects.is_on_the_linked_level(ctx.se_actor, se_obj) and true or false,
+				}
+			end
+		end
+	end
+
+	local function on_init_delivery_task(actor, npc, p)
+		if (not p) or (p and (#p < 4)) then
+			return
+		end
+		local var = p[1]
+		local same_faction = (p[2] == "true")
+		local far_location = (p[3] == "true")
+		local item_1_sec = p[math.random(4, #p)]
+		if (not ini_sys:section_exist(item_1_sec)) then
+			printe("! %s TASK ERROR: xr_effects.create_delivery_quest - can't find item section [%s]", var, tostring(item_1_sec))
+		end
+
+		local task_giver = mob_trade.GetTalkingNpc()
+		local task_giver_id = task_giver:id()
+		local task_giver_comm = character_community(task_giver)
+		local task_giver_name = task_giver:character_name()
+		local target_id
+
+		-- Get target
+		local sim = alife()
+		if delivery_cache[var] and delivery_cache[var][task_giver_id] then
+			target_id = delivery_cache[var][task_giver_id]
+		else
+			local blacklisted_maps = xr_effects.blacklisted_maps
+
+			-- SERIOUS NO NORTH TASKS BEFORE BS AND THE NORTHERN JOB (as in the original)
+			local additionalBlacklist = {}
+			local northernMaps = blacklist_helper.GetNorthernMaps()
+			if blacklist_helper.ShouldBlacklistNorth() then
+				additionalBlacklist = northernMaps
+			elseif northernMaps[level.name()] then
+				additionalBlacklist = blacklist_helper.GetSouthernMaps()
+			end
+
+			local faction_lookup = {}
+			faction_lookup[task_giver_comm] = true
+			if (not same_faction) then
+				for i = 1, #faction_list do
+					if (faction_list[i] ~= task_giver_comm) and (not game_relations.is_factions_enemies(task_giver_comm, faction_list[i])) and (not game_relations.is_factions_enemies(character_community(db.actor), faction_list[i])) then
+						faction_lookup[faction_list[i]] = true
+					end
+				end
+			end
+
+			local targets = {}
+			for _, c in ipairs(world_list("delivery")) do
+				if (faction_lookup[c.comm] == true)
+					and not blacklisted_maps[c.lvl] and not additionalBlacklist[c.lvl] and not c.same
+				then
+					if far_location and (not c.linked) then
+						targets[#targets + 1] = c.id
+					elseif (not far_location) then
+						targets[#targets + 1] = c.id
+					end
+				end
+			end
+			if (#targets == 0) then
+				printf("! %s TASK ERROR: xr_effects.create_delivery_quest - no target found!", var)
+				blacklist_helper.TaskBlacklist[p[1]] = true
+				return
+			end
+
+			blacklist_helper.TaskBlacklist[p[1]] = false
+			target_id = targets[math.random(#targets)]
+
+			if (not delivery_cache[var]) then
+				delivery_cache[var] = {}
+			end
+			delivery_cache[var][task_giver_id] = target_id -- cache
+		end
+
+		-- Save var
+		local se_target = alife_object(target_id)
+		if (not se_target) then
+			return
+		end
+		local target_comm = alife_character_community(se_target)
+		local level_target = sim:level_name(game_graph():vertex(se_target.m_game_vertex_id):level_id())
+		local level_task = level.name()
+		local tbl = {
+			lvl_task = level_task,
+			lvl_target = level_target,
+			task_giver_comm = task_giver_comm,
+			task_giver_name = task_giver_name,
+			target_id = target_id,
+			target_comm = target_comm,
+			item_1_sec = item_1_sec
+		}
+		save_var(db.actor, var, tbl)
+		printdbg("- %s | on_init_delivery_task | giver_comm: %s - target_id: %s - item_1_sec: %s - lvl_task: %s - lvl_target: %s", var, task_giver_comm, target_id, item_1_sec, level_task, level_target)
+		-- Show info
+		local function postpone_for_next_frame(target_id)
+			local news_caption = game.translate_string(task_manager.task_ini:r_string_ex(p[1], "title")) or "error"
+			local news_text = game.translate_string("st_mm_new_game_name") .. " " .. se_target:character_name() .. "\\n " .. game.translate_string("st_mm_new_game_faction_2") .. " " .. game.translate_string(se_target:community()) .. "\\n " .. game.translate_string("st_location") .. " " .. game.translate_string(level_target)
+			db.actor:give_talk_message2(news_caption, news_text, se_target:character_icon(), "iconed_answer_item", p[1])
+			return true
+		end
+		CreateTimeEvent(0, "on_init_delivery_task", 0, postpone_for_next_frame, target_id)
+	end
+
+	ours[on_init_delivery_task] = true
+	put(on_init_delivery_task)
+	L(fmt("delivery scan shared (snapshot %d ms)", SNAPSHOT_MS))
+end
+
 function on_game_start()
-	local ok, err = pcall(install_memo)
-	if not ok then L("memo install error: " .. tostring(err)) end
-	ok, err = pcall(install_bounty)
-	if not ok then L("bounty install error: " .. tostring(err)) end
+	local parts = { memo = install_memo, bounty = install_bounty, measure = install_measure, delivery = install_delivery }
+	for _, name in ipairs({ "memo", "bounty", "measure", "delivery" }) do
+		local ok, err = pcall(parts[name])
+		if not ok then L(name .. " install error: " .. tostring(err)) end
+	end
 	if not __xrrfix_tgen_cb then
 		__xrrfix_tgen_cb = true
 		RegisterScriptCallback("on_level_changing", clear)
