@@ -9,12 +9,14 @@
      xr_conditions.has_completed_task_prerequisites(nil, nil, {task_id}). Tasks QoL's
      validate_assault_task scans all smarts and their squads and caches nothing on failure, so
      every NPC of a burst repeats the same scans (sim NPCs share the "simulation_task_" prefix).
-     The call has no actor and no NPC: the result depends on task_id and the world only.
+     The call has no actor and no NPC, so the result usually depends on task_id and the world only;
+     preconditions that read the dialog NPC (validate_measure_task) are detected and never shared.
   2. PDA Taskboard Redesign's setup_bounty_task builds target variants with a full scan of all
      65534 server objects (local build_variants) for every bounty task without live variants.
   Fix:
   1. Generation calls of has_completed_task_prerequisites (actor and npc nil) are answered from a
-     per-task memo for 5 s; logic calls go straight to the original.
+     per-task memo for 5 s, unless the precondition called mob_trade.GetTalkingNpc while it was
+     computed; logic calls go straight to the original.
   2. build_variants is swapped (debug.setupvalue in variant_list) for one that takes candidates
      from a shared snapshot of the same scan, kept for 5 s, using the mod's own filters, and checks
      each picked candidate with the mod's candidate_valid.
@@ -28,6 +30,7 @@ local fmt = string.format
 local function L(s) printf("%s", "[XRRFIX] tgen: " .. s) end
 
 local memo = {}          -- task_id -> { t = time_global(), v = result }
+local npc_bound = {}     -- task_id -> true: its precondition reads the dialog NPC, never memoized
 local snapshot = nil     -- { t = time_global(), list = { {id, comm, rela, map, near}, ... } }
 local stats = { hits = 0, misses = 0, built = 0, reused = 0 }
 
@@ -40,6 +43,7 @@ end
 
 local function clear()
 	memo = {}
+	npc_bound = {}
 	snapshot = nil
 end
 
@@ -58,7 +62,7 @@ local function install_memo()
 
 	xr_conditions.has_completed_task_prerequisites = function(actor, npc, p, ...)
 		local task_id = p and p[1]
-		if actor ~= nil or npc ~= nil or type(task_id) ~= "string" then
+		if actor ~= nil or npc ~= nil or type(task_id) ~= "string" or npc_bound[task_id] then
 			return orig(actor, npc, p, ...)
 		end
 		local now = time_global()
@@ -68,9 +72,28 @@ local function install_memo()
 			return e.v
 		end
 		stats.misses = stats.misses + 1
-		local v = orig(actor, npc, p, ...)
-		memo[task_id] = { t = now, v = v }
-		return v
+
+		-- Some preconditions read the dialog NPC themselves (validate_measure_task caches its target per
+		-- task giver): those results belong to one NPC and must not be shared
+		local mt = mob_trade
+		local talking = mt and mt.GetTalkingNpc
+		local touched = false
+		if type(talking) == "function" then
+			mt.GetTalkingNpc = function(...)
+				touched = true
+				return talking(...)
+			end
+		end
+		local res = { pcall(orig, actor, npc, p, ...) }
+		if type(talking) == "function" then mt.GetTalkingNpc = talking end
+		if not res[1] then error(res[2], 0) end
+
+		if touched then
+			npc_bound[task_id] = true
+		else
+			memo[task_id] = { t = now, v = res[2] }
+		end
+		return unpack(res, 2, table.maxn(res))
 	end
 	L(fmt("prerequisites memo installed (%d ms)", MEMO_MS))
 end
