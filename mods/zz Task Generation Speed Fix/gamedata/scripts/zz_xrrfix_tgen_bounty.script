@@ -1,0 +1,163 @@
+--[[
+  FX-TGEN, part "bounty": bounty targets from the shared world snapshot.
+  Part of zz Task Generation Speed Fix: installed on the host and the peer with the rest of the mod; it works where
+  tasks are generated (the host, or solo).
+
+  In PDA Taskboard Redesign v1.3 (z_taskboard_bounty_variants.script) a bounty task offers a few possible targets
+  ("variants"). Its local function build_variants(task_id, p) finds them by checking all 65534 server objects; it runs
+  for every bounty task without live cached variants - on a fresh Taskboard refresh, every bounty task of every NPC.
+
+  build_variants is a local of the mod, called only by the mod's local variant_list, so it is replaced inside
+  variant_list's upvalues (see zz_xrrfix_tgen_hooks). The replacement is this file's own code, but every decision in it
+  is made by the mod's own helper functions (found the same way), so the mod's rules stay in charge:
+    - while the world is scanned, a collector keeps every object the mod's candidate filter accepts, for any faction;
+    - per task, candidates of the task's factions are taken from that list and grouped and ordered like the original
+      does, and every pick is checked again with the mod's candidate_valid (the target may have died since the scan).
+]]
+
+local hooks = zz_xrrfix_tgen_hooks
+local snapshot = zz_xrrfix_tgen_snapshot
+
+-- A faction lookup that accepts every faction: given to the mod's candidate_relation while scanning, so that one scan
+-- serves tasks of all factions (the task's own factions are applied later, per task).
+local ANY_FACTION = setmetatable({}, { __index = function() return true end })
+
+-- Helper functions of the mod that the replacement needs; without any of them the part is skipped.
+local REQUIRED_HELPERS = { "candidate_relation", "is_smart_valid", "level_of", "selected_blacklist",
+	"faction_lookup_from_params", "candidate_valid", "shuffled_copy" }
+
+--[[ find_taskboard_helpers(variant_list, original_build_variants) -> taskboard | nil
+  Collects the mod's locals that build_variants works with, from the upvalues of variant_list, of build_variants and
+  of the mod's append_unique (each of them sees a part of the mod's locals). Returns nil when anything is missing.
+  The returned table has the mod's names:
+    candidate_relation(id, se_obj, faction_lookup) -> "enemy" | "neutral" | nil
+                                                           nil unless the object is a common sim stalker of one of the
+                                                           factions in a squad; else how that squad sees the actor
+    is_smart_valid(squad_id) -> boolean                    the object's squad is not in an excluded smart terrain
+    level_of(se_obj) -> level name | nil
+    selected_blacklist() -> { level name -> true } | nil   maps the player excluded in the mod's settings
+    faction_lookup_from_params(p) -> { faction -> true }   the factions a task's targets may belong to
+    candidate_valid(id, p) -> boolean                      the final check of one target for one task
+    shuffled_copy(list) -> list                            the mod's random order
+    blacklisted_maps = { level name -> true }              maps that never have targets
+    max_variants = number                                  how many variants a task offers (MAX_VARIANTS)
+  Called by install().
+]]
+local function find_taskboard_helpers(variant_list, original_build_variants)
+	local mod_locals = hooks.read_upvalues(variant_list, {})
+	hooks.read_upvalues(original_build_variants, mod_locals)
+	hooks.read_upvalues(mod_locals.append_unique, mod_locals)
+	local taskboard = { blacklisted_maps = mod_locals.blacklisted_maps, max_variants = tonumber(mod_locals.MAX_VARIANTS) }
+	for _, name in ipairs(REQUIRED_HELPERS) do
+		if type(mod_locals[name]) ~= "function" then return nil end
+		taskboard[name] = mod_locals[name]
+	end
+	if not (type(taskboard.blacklisted_maps) == "table" and taskboard.max_variants) then return nil end
+	return taskboard
+end
+
+--[[ make_candidate_collector(taskboard) -> collector
+  The snapshot collector of this part (see zz_xrrfix_tgen_snapshot.register_collector). It applies the original's
+  filter to every object - candidate_relation (for any faction), is_smart_valid, level not in blacklisted_maps - and
+  returns for each accepted object:
+    { id, faction = its community, relation = "enemy" | "neutral" (how its squad sees the actor),
+      level = its level name, nearby = true when it is on a level next to the actor's }
+  Called by install(); the collector is called by the snapshot's world scan.
+]]
+local function make_candidate_collector(taskboard)
+	local candidate_relation, is_smart_valid, level_of = taskboard.candidate_relation, taskboard.is_smart_valid,
+		taskboard.level_of
+	local blacklisted_maps = taskboard.blacklisted_maps
+	return function(id, se_obj, scan)
+		local relation = candidate_relation(id, se_obj, ANY_FACTION)
+		if relation and is_smart_valid(se_obj.group_id) then
+			local level_name = level_of(se_obj)
+			if level_name and not blacklisted_maps[level_name] then
+				return {
+					id = id,
+					faction = alife_character_community(se_obj),
+					relation = relation,
+					level = level_name,
+					nearby = simulation_objects.is_on_the_nearby_level(scan.se_actor, se_obj) and true or false,
+				}
+			end
+		end
+	end
+end
+
+--[[ group_candidates(taskboard, task_params) -> groups
+  The snapshot's candidates for one task, in the original's four groups and order:
+    { valid enemies, valid neutrals, other enemies, other neutrals } - each a list of object ids.
+  Only candidates of the task's factions (faction_lookup_from_params) on maps the player did not exclude
+  (selected_blacklist) are kept. "Other" means not on a nearby level and is used only when the task asks for nearby
+  targets (task_params[3] == "true"); otherwise every candidate is "valid".
+  task_params is the task's p from the task ltx. Called by build_variants in install().
+]]
+local function group_candidates(taskboard, task_params)
+	local task_factions = taskboard.faction_lookup_from_params(task_params)
+	local excluded_maps = taskboard.selected_blacklist()
+	local nearby_only = task_params[3] == "true"
+	local valid = { enemy = {}, neutral = {} }
+	local other = { enemy = {}, neutral = {} }
+	for _, candidate in ipairs(snapshot.entries("bounty")) do
+		if task_factions[candidate.faction] == true and not (excluded_maps and excluded_maps[candidate.level]) then
+			local by_relation = (nearby_only and not candidate.nearby) and other or valid
+			local group = by_relation[candidate.relation]
+			if group then group[#group + 1] = candidate.id end
+		end
+	end
+	return { valid.enemy, valid.neutral, other.enemy, other.neutral }
+end
+
+--[[ pick_variants(taskboard, groups, task_params) -> variant ids
+  Up to max_variants target ids for the task, the way the original picks them: groups in order, each in the mod's
+  random order (shuffled_copy), an id at most once, and only ids that pass the mod's candidate_valid now.
+  Called by build_variants in install().
+]]
+local function pick_variants(taskboard, groups, task_params)
+	local variants, already_seen = {}, {}
+	for _, group in ipairs(groups) do
+		for _, id in ipairs(taskboard.shuffled_copy(group)) do
+			if #variants >= taskboard.max_variants then return variants end
+			if not already_seen[id] then
+				already_seen[id] = true
+				if taskboard.candidate_valid(id, task_params) then variants[#variants + 1] = id end
+			end
+		end
+	end
+	return variants
+end
+
+--[[ install() -> installed, message
+  Finds the mod's variant_list (an upvalue of the public GetVariantInfo), the original build_variants inside it and
+  the helpers; registers the collector and puts this file's build_variants in the original's place. Referencing
+  z_taskboard_bounty_variants loads the mod if it is not loaded yet. Results as described in zz_xrrfix_tgen's header;
+  skipped when the debug library, the mod or any helper is missing; the flag __xrrfix_tgen_bounty on the mod marks it
+  installed. Called by zz_xrrfix_tgen.on_game_start.
+]]
+function install()
+	local skip_message = "Taskboard bounty selector not found, bounty part skipped"
+	if not hooks.debug_available() then return false, skip_message end
+	local taskboard_mod = z_taskboard_bounty_variants
+	local get_variant_info = taskboard_mod and taskboard_mod.GetVariantInfo
+	if type(get_variant_info) ~= "function" then return false, skip_message end
+	if taskboard_mod.__xrrfix_tgen_bounty then return true end
+
+	local variant_list = hooks.read_upvalues(get_variant_info, {}).variant_list
+	local build_variants_number = type(variant_list) == "function"
+		and hooks.upvalue_number(variant_list, "build_variants")
+	if not build_variants_number then return false, skip_message end
+	local _, original_build_variants = debug.getupvalue(variant_list, build_variants_number)
+	local taskboard = find_taskboard_helpers(variant_list, original_build_variants)
+	if not taskboard then return false, skip_message end
+
+	snapshot.register_collector("bounty", make_candidate_collector(taskboard))
+	-- Same arguments and result as the original: the task id (not needed here) and the task's params; returns the
+	-- list of variant ids. Called by the mod's variant_list when a task has no live cached variants.
+	local function build_variants(task_id, task_params)
+		return pick_variants(taskboard, group_candidates(taskboard, task_params), task_params)
+	end
+	debug.setupvalue(variant_list, build_variants_number, build_variants)
+	taskboard_mod.__xrrfix_tgen_bounty = true
+	return true, string.format("bounty scan shared (snapshot %d ms)", snapshot.LIFETIME_MS)
+end

@@ -1,0 +1,74 @@
+--[[
+  FX-TGEN, part "measure": the measurement task's anomaly search from the shared world snapshot.
+  Part of zz Task Generation Speed Fix: installed on the host and the peer with the rest of the mod; it works where
+  tasks are generated (the host, or solo).
+
+  xr_conditions.validate_measure_task (Oleh's Tasks Crash Fixes, tasks_measure.script; the same function in Tasks QoL)
+  is the precondition of measurement tasks. For each task and task giver it picks a random anomaly to measure, by
+  checking all 65534 server objects, and caches it in the module's cache[task_id][task_giver_id]. Measured in a
+  40-NPC refresh: 72 calls, 3654 of 3691 ms of the whole generation (specs/fixes/fx-tgen.md).
+
+  The function is replaced by a verbatim copy (zz_xrrfix_tgen_measure_copy) in which only the world scan reads the
+  snapshot's anomaly list. The copy keeps working per dialog NPC and fills the module's own cache, which the module's
+  setup_measure_task reads when the task is given; memo never shares its answers between NPCs (it asks for the NPC).
+]]
+
+local hooks = zz_xrrfix_tgen_hooks
+local snapshot = zz_xrrfix_tgen_snapshot
+local level_name_of = snapshot.level_name_of -- called for every anomaly of every world scan
+
+--[[ make_anomaly_collector(anomaly_types) -> collector
+  The snapshot collector of this part (see zz_xrrfix_tgen_snapshot.register_collector). anomaly_types is the module's
+  table: target type ("chemical", ...) -> { anomaly section -> true }. The collector keeps every anomaly whose section
+  is of any type (each task filters its own types later) and returns
+    { id, section, level = its level name, online = whether it is online (switched on, near the actor) }.
+  Called by install(); the collector is called by the snapshot's world scan.
+]]
+local function make_anomaly_collector(anomaly_types)
+	local anomaly_sections = {}
+	for _, sections_of_type in pairs(anomaly_types) do
+		for section in pairs(sections_of_type) do anomaly_sections[section] = true end
+	end
+	return function(id, se_obj, scan)
+		local section = se_obj:section_name()
+		if anomaly_sections[section] then
+			return { id = id, section = section, level = level_name_of(scan, se_obj), online = se_obj.online }
+		end
+	end
+end
+
+--[[ install() -> installed, message
+  Finds the original validate_measure_task (recognised by its upvalues cache and anomaly_types; it may sit behind
+  G_FLAT's wrapper), reads its locals, registers the collector and puts the copy in the original's place. Results as
+  described in zz_xrrfix_tgen's header; skipped when the debug library or the original is missing; already installed
+  when the function found is our copy. Called by zz_xrrfix_tgen.on_game_start.
+]]
+function install()
+	local skip_message = "validate_measure_task not recognised, measure part skipped"
+	if not hooks.debug_available() then return false, skip_message end
+	local original, put_replacement = hooks.find_original(xr_conditions, "validate_measure_task",
+		{ "cache", "anomaly_types" })
+	if not original then return false, skip_message end
+	if hooks.is_ours(original) then return true end
+	local module_locals = hooks.read_upvalues(original, {})
+	if not (type(module_locals.cache) == "table" and type(module_locals.anomaly_types) == "table") then
+		return false, skip_message
+	end
+	-- The original reads blacklisted_maps as a local of its module. G_FLAT's unlocalizer turns that local into the
+	-- module variable tasks_measure.blacklisted_maps (and changes it), so then there is no upvalue and the copy reads
+	-- the module variable at each call.
+	local blacklisted_maps_upvalue = module_locals.blacklisted_maps
+
+	snapshot.register_collector("measure", make_anomaly_collector(module_locals.anomaly_types))
+	local copy = zz_xrrfix_tgen_measure_copy.make_validate_measure_task({
+		cache = module_locals.cache,
+		anomaly_types = module_locals.anomaly_types,
+		blacklisted_maps = function()
+			return blacklisted_maps_upvalue or (tasks_measure and tasks_measure.blacklisted_maps) or {}
+		end,
+		snapshot_entries = snapshot.entries,
+	})
+	hooks.mark_ours(copy)
+	put_replacement(copy)
+	return true, string.format("measure scan shared (snapshot %d ms)", snapshot.LIFETIME_MS)
+end

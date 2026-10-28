@@ -1,0 +1,80 @@
+--[[
+  FX-TGEN, part "delivery": the delivery task's target search from the shared world snapshot.
+  Part of zz Task Generation Speed Fix: installed on the host and the peer with the rest of the mod; it works where
+  tasks are generated (the host, or solo).
+
+  xr_effects.on_init_delivery_task (463- Tasks QoL Pack - Serious, tasks_delivery.script) is the on_job_descr effect
+  of delivery tasks: it picks the NPC the item must be brought to - a common stalker commanding a sim squad, on
+  another level, of the giver's faction or (unless the task wants the same faction) of any faction that is not an
+  enemy of the giver or of the actor - by checking all 65534 server objects. When it finds nobody it
+  caches nothing, so the next refresh scans the world again.
+
+  The function is replaced by a verbatim copy (zz_xrrfix_tgen_delivery_copy) in which only that search reads the
+  snapshot's list of squad commanders. The faction filter by the dialog NPC, the module's delivery_cache and the
+  "no target found" handling stay the original's.
+]]
+
+local hooks = zz_xrrfix_tgen_hooks
+local snapshot = zz_xrrfix_tgen_snapshot
+-- Called for objects of every world scan, so kept as locals
+local level_name_of = snapshot.level_name_of
+local find = string.find
+
+-- group_id of a server object that is not in any squad.
+local NO_SQUAD = 65535
+
+--[[ commander_collector(id, se_obj, scan) -> entry | nil
+  The snapshot collector of this part (see zz_xrrfix_tgen_snapshot.register_collector). Keeps the objects the
+  original's search accepts before its faction and level filters: an alive common stalker (section sim_default*,
+  no story id) who commands a sim_squad* squad whose current_action is 1 (the original's condition, kept as is).
+  Returns
+    { id, faction = its community, level = its level name,
+      on_actor_level = whether it is on the actor's level, on_linked_level = whether its level is linked to the actor's }
+  The two flags are what the original computes with simulation_objects.is_on_the_same_level / is_on_the_linked_level.
+  Registered by install(); called by the snapshot's world scan.
+]]
+local function commander_collector(id, se_obj, scan)
+	local is_common_stalker = IsStalker(nil, se_obj:clsid()) and se_obj:alive()
+		and find(se_obj:section_name(), "sim_default") and get_object_story_id(id) == nil
+	if not is_common_stalker then return nil end
+	local squad = se_obj.group_id and se_obj.group_id ~= NO_SQUAD and alife_object(se_obj.group_id)
+	local commands_sim_squad = squad and squad:commander_id() == se_obj.id
+		and find(squad:section_name(), "sim_squad") and squad.current_action == 1
+	if not commands_sim_squad then return nil end
+	return {
+		id = id,
+		faction = alife_character_community(se_obj),
+		level = level_name_of(scan, se_obj),
+		on_actor_level = simulation_objects.is_on_the_same_level(scan.se_actor, se_obj) and true or false,
+		on_linked_level = simulation_objects.is_on_the_linked_level(scan.se_actor, se_obj) and true or false,
+	}
+end
+
+--[[ install() -> installed, message
+  Finds the original on_init_delivery_task (recognised by its upvalues delivery_cache and faction_list; it may sit
+  behind xrRazom's host-only guard), reads its locals, registers the collector and puts the copy in the original's
+  place. Results as described in zz_xrrfix_tgen's header; skipped when the debug library or the original is missing;
+  already installed when the function found is our copy. Called by zz_xrrfix_tgen.on_game_start.
+]]
+function install()
+	local skip_message = "on_init_delivery_task not recognised, delivery part skipped"
+	if not hooks.debug_available() then return false, skip_message end
+	local original, put_replacement = hooks.find_original(xr_effects, "on_init_delivery_task",
+		{ "delivery_cache", "faction_list" })
+	if not original then return false, skip_message end
+	if hooks.is_ours(original) then return true end
+	local module_locals = hooks.read_upvalues(original, {})
+	if not (type(module_locals.delivery_cache) == "table" and type(module_locals.faction_list) == "table") then
+		return false, skip_message
+	end
+
+	snapshot.register_collector("delivery", commander_collector)
+	local copy = zz_xrrfix_tgen_delivery_copy.make_on_init_delivery_task({
+		delivery_cache = module_locals.delivery_cache,
+		faction_list = module_locals.faction_list,
+		snapshot_entries = snapshot.entries,
+	})
+	hooks.mark_ours(copy)
+	put_replacement(copy)
+	return true, string.format("delivery scan shared (snapshot %d ms)", snapshot.LIFETIME_MS)
+end

@@ -1,0 +1,115 @@
+--[[
+  FX-TGEN, part "memo": remembers task preconditions for a few seconds.
+  Part of zz Task Generation Speed Fix: installed on the host and the peer with the rest of the mod; it works where
+  tasks are generated (the host, or solo).
+
+  axr_task_manager.generate_available_tasks asks xr_conditions.has_completed_task_prerequisites(nil, nil, {task_id})
+  for every task of every NPC whose tasks are listed. Sim NPCs share their tasks (simulation_task_*), so a Taskboard
+  refresh with 40-70 NPCs computes the same precondition dozens of times, and some preconditions scan the whole world
+  (validate_assault_task goes through all smart terrains and squads).
+  The wrapper installed here answers such a call from memory when the same task was computed less than MEMORY_MS ago.
+
+  What is never answered from memory:
+    - calls with an actor or an NPC: those come from logic conditions, not from task generation;
+    - tasks whose precondition asked for the dialog NPC (mob_trade.GetTalkingNpc). Such a precondition answers for
+      that NPC only: validate_measure_task picks and caches a target per task giver, and the giver's own cache entry
+      is what setup_measure_task reads later. Sharing one NPC's answer with the others would break their tasks.
+      The first computation shows whether the precondition asks for the NPC; from then on that task always runs the
+      original.
+]]
+
+-- How long a computed answer is reused, in ms of time_global().
+local MEMORY_MS = 5000
+
+-- task_id -> { computed_at = time_global() of the computation, answer = what the original returned }
+local remembered = {}
+-- task_id -> true for tasks whose precondition asked for the dialog NPC: always computed, never remembered.
+local depends_on_npc = {}
+-- For take_counters: calls answered from memory / calls that ran the original.
+local counters = { hits = 0, misses = 0 }
+
+--[[ call_watching_dialog_npc(fn, ...) -> asked_for_npc, results
+  Calls fn(...) under pcall and tells whether fn (or anything it called) asked for the dialog NPC: for that time
+  mob_trade.GetTalkingNpc is replaced by a version that notes the call and then does the real work. The real
+  GetTalkingNpc is put back even when fn fails (FX-TGEN-012).
+  Returns asked_for_npc (true/false) and results, the list pcall returned: { true, fn's results... } or
+  { false, error }.
+  Called by the wrapper below when it has to compute a precondition.
+]]
+local function call_watching_dialog_npc(fn, ...)
+	local trade = mob_trade
+	local real_get_talking_npc = trade and trade.GetTalkingNpc
+	local asked_for_npc = false
+	if type(real_get_talking_npc) == "function" then
+		trade.GetTalkingNpc = function(...)
+			asked_for_npc = true
+			return real_get_talking_npc(...)
+		end
+	end
+	local results = { pcall(fn, ...) }
+	if type(real_get_talking_npc) == "function" then trade.GetTalkingNpc = real_get_talking_npc end
+	return asked_for_npc, results
+end
+
+--[[ with_memory(original) -> wrapper
+  Builds the replacement for has_completed_task_prerequisites. The wrapper takes the same arguments as the original
+  (actor, npc, p, ...; p[1] is the task id) and returns what the original returns, or would return:
+    - a call with an actor or an NPC, without a task id, or for a task that depends on the NPC: the original, as is;
+    - a task computed less than MEMORY_MS ago: the remembered answer (its first result);
+    - otherwise: the original runs; its first result is remembered, unless the original asked for the dialog NPC -
+      then the task is marked as depending on the NPC instead. An error of the original is passed on, not remembered.
+  Called once by install(); the wrapper is then called by task generation for every task of every listed NPC.
+]]
+local function with_memory(original)
+	return function(actor, npc, p, ...)
+		local task_id = p and p[1]
+		if actor ~= nil or npc ~= nil or type(task_id) ~= "string" or depends_on_npc[task_id] then
+			return original(actor, npc, p, ...)
+		end
+
+		local now = time_global()
+		local memory = remembered[task_id]
+		if memory and now - memory.computed_at < MEMORY_MS then
+			counters.hits = counters.hits + 1
+			return memory.answer
+		end
+		counters.misses = counters.misses + 1
+
+		local asked_for_npc, results = call_watching_dialog_npc(original, actor, npc, p, ...)
+		local no_error = results[1]
+		if not no_error then error(results[2], 0) end
+		if asked_for_npc then
+			depends_on_npc[task_id] = true
+		else
+			remembered[task_id] = { computed_at = now, answer = results[2] }
+		end
+		return unpack(results, 2, table.maxn(results))
+	end
+end
+
+--[[ install() -> installed, message
+  Replaces xr_conditions.has_completed_task_prerequisites with with_memory(original). Results as described in
+  zz_xrrfix_tgen's header: skipped when the function does not exist, nothing done when already installed (the flag
+  __xrrfix_tgen_memo on xr_conditions). Called by zz_xrrfix_tgen.on_game_start.
+]]
+function install()
+	local original = xr_conditions and xr_conditions.has_completed_task_prerequisites
+	if type(original) ~= "function" then return false, "has_completed_task_prerequisites missing, memo skipped" end
+	if xr_conditions.__xrrfix_tgen_memo then return true end
+	xr_conditions.__xrrfix_tgen_memo = true
+	xr_conditions.has_completed_task_prerequisites = with_memory(original)
+	return true, string.format("prerequisites memo installed (%d ms)", MEMORY_MS)
+end
+
+-- Forgets every remembered answer and which tasks depend on the NPC. Called by zz_xrrfix_tgen on a level change.
+function forget()
+	remembered = {}
+	depends_on_npc = {}
+end
+
+-- Returns { hits, misses } since the previous call and starts from zero. Called by zz_xrrfix_tgen.take_stats.
+function take_counters()
+	local taken = counters
+	counters = { hits = 0, misses = 0 }
+	return taken
+end

@@ -1,0 +1,116 @@
+--[[
+  FX-TGEN: tools for replacing a function of another mod (used by the bounty, measure and delivery parts).
+  Part of zz Task Generation Speed Fix: installed on the host and the peer with the rest of the mod; it works where
+  tasks are generated (the host, or solo).
+
+  Why it is needed: the slow code is inside other mods' local functions, which a normal override cannot reach.
+  The functions we replace keep their data in local variables of their own script (a cache, a list of factions),
+  which another script cannot reach by name. Lua lets us reach them through the function itself: every local
+  variable of the outer script that a function uses is an "upvalue" of that function. debug.getupvalue(fn, i)
+  returns the name and value of fn's i-th upvalue, debug.setupvalue(fn, i, v) replaces it.
+
+  Other mods often wrap the function we need: G_FLAT's More Measurement Task Maps wraps validate_measure_task,
+  xrRazom's host-only guard wraps on_init_delivery_task. A wrapper keeps the function it wraps as its own upvalue,
+  so find_original follows that chain down to the original and replaces it there, leaving the wrappers working.
+]]
+
+-- How many upvalues to look through per function; real functions have a few dozen at most.
+local MAX_UPVALUES = 200
+-- How many wrappers deep find_original looks for the original.
+local MAX_WRAPPER_DEPTH = 4
+
+--[[ debug_available() -> boolean
+  True when the debug library can read and replace upvalues. The bounty, measure and delivery parts need it and skip
+  themselves without it. Called first by each of their install().
+]]
+function debug_available()
+	return debug and debug.getupvalue and debug.setupvalue and true or false
+end
+
+--[[ read_upvalues(fn, into) -> into
+  Adds every upvalue of fn to the table `into` as name -> value; a name that `into` already has keeps its value (so
+  calling it for several functions, the first one wins). Does nothing when fn is not a function.
+  Used by the parts to read the locals of the mod they patch: bounty reads the Taskboard helpers, measure and
+  delivery read the original's cache and settings.
+]]
+function read_upvalues(fn, into)
+	if type(fn) ~= "function" then return into end
+	for i = 1, MAX_UPVALUES do
+		local name, value = debug.getupvalue(fn, i)
+		if name == nil then break end
+		if into[name] == nil then into[name] = value end
+	end
+	return into
+end
+
+--[[ upvalue_number(fn, wanted_name) -> number | nil
+  The position of fn's upvalue named wanted_name, as debug.getupvalue / debug.setupvalue need it; nil if fn has no
+  such upvalue. Used by bounty to replace build_variants inside variant_list.
+]]
+function upvalue_number(fn, wanted_name)
+	for i = 1, MAX_UPVALUES do
+		local name = debug.getupvalue(fn, i)
+		if name == nil then return nil end
+		if name == wanted_name then return i end
+	end
+end
+
+-- True when fn is a function that has an upvalue for every name in required_names (it is the original we look for).
+local function has_all_upvalues(fn, required_names)
+	if type(fn) ~= "function" then return false end
+	local upvalues = read_upvalues(fn, {})
+	for _, name in ipairs(required_names) do
+		if upvalues[name] == nil then return false end
+	end
+	return true
+end
+
+--[[ find_original(owner, key, required_names) -> original, put_replacement | nil
+  Finds the original function behind owner[key] (for example xr_conditions.validate_measure_task): the function at
+  owner[key] itself, or one that a wrapper there keeps as an upvalue (up to MAX_WRAPPER_DEPTH wrappers deep). The
+  original is recognised by having every upvalue in required_names (for example "cache" and "anomaly_types").
+  Returns the original and put_replacement(new_fn), which puts new_fn exactly where the original was found: into
+  owner[key] when there was no wrapper, otherwise into the wrapper's upvalue. Returns nil when nothing matches.
+  Called by the measure and delivery install().
+]]
+function find_original(owner, key, required_names)
+	local top = owner and owner[key]
+	if type(top) ~= "function" then return nil end
+	if has_all_upvalues(top, required_names) then
+		return top, function(new_fn) owner[key] = new_fn end
+	end
+
+	local visited = {}
+	local function search_wrapper(wrapper, depth)
+		if depth > MAX_WRAPPER_DEPTH or visited[wrapper] then return nil end
+		visited[wrapper] = true
+		for i = 1, MAX_UPVALUES do
+			local name, value = debug.getupvalue(wrapper, i)
+			if name == nil then break end
+			if type(value) == "function" then
+				if has_all_upvalues(value, required_names) then
+					return value, function(new_fn) debug.setupvalue(wrapper, i, new_fn) end
+				end
+				local original, put_replacement = search_wrapper(value, depth + 1)
+				if original then return original, put_replacement end
+			end
+		end
+	end
+	return search_wrapper(top, 1)
+end
+
+-- Replacements this fix has put in place. Our copies have the same upvalues as the originals, so a second
+-- on_game_start would find a copy as "the original" and replace it with a copy of itself; is_ours prevents that.
+-- Weak keys: a replacement that another mod throws away is not kept alive by this table.
+local our_replacements = setmetatable({}, { __mode = "k" })
+
+-- Remembers fn as a replacement made by this fix. Called by the measure and delivery install() right after
+-- they build their copy.
+function mark_ours(fn)
+	our_replacements[fn] = true
+end
+
+-- True when fn is a replacement made by this fix (that part is already installed).
+function is_ours(fn)
+	return our_replacements[fn] == true
+end

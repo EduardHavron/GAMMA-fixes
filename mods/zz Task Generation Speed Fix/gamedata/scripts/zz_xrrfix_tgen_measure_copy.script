@@ -1,0 +1,155 @@
+--[[
+  FX-TGEN, part "measure": a verbatim copy of xr_conditions.validate_measure_task from Oleh's Tasks Crash Fixes
+  (gamedata/scripts/tasks_measure.script; the same function as in Tasks QoL). Only its world scan is replaced: instead of
+  checking all 65534 server objects it reads the anomaly list of the shared world snapshot (zz_xrrfix_tgen_snapshot).
+  Everything else - the dialog NPC, the per-NPC target cache, the type filter, blacklists, scan modes, the random pick -
+  is the original's text, formatting included, so the copy can be compared with the original by a plain diff.
+  Part of zz Task Generation Speed Fix: installed on the host and the peer with the rest of the mod; it works where
+  tasks are generated (the host, or solo). Symptom without the fix: seconds of freeze on every Taskboard refresh.
+  How to check it after Oleh's Tasks Crash Fixes updates: take the body of make_validate_measure_task (the lines between
+  `return function(actor,npc,p)` and its `end`), remove one tab of indent and diff it with xr_conditions.validate_measure_task in
+  tasks_measure.script. The only differences must be the lines marked `-- XRRFIX:`. If the original changed elsewhere,
+  copy the new text here and redo only the marked places.
+]]
+
+--[[ make_validate_measure_task(deps) -> validate_measure_task
+  Builds the replacement for validate_measure_task. The original reads local variables of tasks_measure.script that
+  this file cannot see; zz_xrrfix_tgen_measure.install finds them through the original's upvalues and passes them in:
+    deps.cache            - the module's table of chosen targets: cache[task_id][task_giver_id] = { target_id, ... };
+                            the copy fills it, and the module's setup_measure_task reads it when the task is given
+    deps.anomaly_types    - the module's table: task target type ("chemical", ...) -> { anomaly section -> true }
+    deps.blacklisted_maps - a function returning the module's current map blacklist: level name -> true
+                            (a function because G_FLAT's unlocalizer may replace the table after install)
+    deps.snapshot_entries - zz_xrrfix_tgen_snapshot.entries: the list a part's collector gathered in the last world scan
+  Returns the function to put in place of the original; same arguments and results as the original:
+    p = task params from the task ltx: { task_id, scan mode, monster allowed, item section, target type, ... };
+    returns true when a target is cached for the dialog NPC, false/nil when none (and logs why, like the original).
+  Called once per game start by zz_xrrfix_tgen_measure.install; the returned function is then called by task
+  generation for every measure task offered by every NPC, as that task's precondition.
+]]
+function make_validate_measure_task(deps)
+	local cache, anomaly_types = deps.cache, deps.anomaly_types
+	return function(actor,npc,p)
+		if not (p and (#p >= 5)) then
+			printe("! ERROR - %s | not enough parameters for on_init_measure_task!",p[1])
+			return false
+		end
+		local task_id = p[1]
+		
+		if (not db.actor:is_talking()) then
+			printe("! ERROR validate_measure_task | actor is not talking")
+			return
+		end
+		local task_giver = mob_trade.GetTalkingNpc()
+		local task_giver_id = task_giver:id()
+		
+		-- Already cached
+		if cache[task_id] and cache[task_id][task_giver_id] then
+			return true
+		end
+		
+		-- Gather info
+		local scan_mode = tonumber(p[2]) or 4
+		local monster_allow = (p[3] == "true") and true or false
+		local item_1_sec = ini_sys:section_exist(p[4]) and p[4] or nil
+		if (not item_1_sec) then
+			printe("! ERROR - %s | can't find item section!",task_id)
+			return false
+		end
+		local target_types = {}
+		for i=5,#p do
+			target_types[p[i]] = true
+		end
+
+		local task_giver_comm = character_community(task_giver)
+		local task_giver_name = task_giver:character_name()
+		local target_id
+		
+		-- Get target
+		local sim = alife()
+		local ano_tbl = {}
+		for typ,v in pairs(anomaly_types) do
+			if target_types[typ] then
+				for sec,_ in pairs(v) do
+					ano_tbl[sec] = true
+				end
+			end
+		end
+		
+		--[[
+			SERIOUS NO NORTH TASKS BEFORE BS
+			AND THE NORTHERN JOB
+		--]]
+		local additionalBlacklist = {}
+		local mcm_scanMode = blacklist_helper.GetMcmDropdownValue()
+		local northernMaps = blacklist_helper.GetNorthernMaps()
+
+		if mcm_scanMode > 0  then
+			scan_mode = mcm_scanMode
+		end
+
+		if blacklist_helper.ShouldBlacklistNorth() then
+			additionalBlacklist = northernMaps
+		elseif northernMaps[level.name()] then -- Player is in the Northern region and rightfully so
+			additionalBlacklist = blacklist_helper.GetSouthernMaps()
+		end
+		--[[
+			SERIOUS NO NORTH TASKS BEFORE BS
+			AND THE NORTHERN JOB
+		--]]
+
+		local targets = {}
+		local actor_level = level.name()
+		local blacklisted_maps = deps.blacklisted_maps() -- XRRFIX: was the module's blacklisted_maps (upvalue, or a module variable once an unlocalizer opened it)
+		local gg = game_graph()
+		local sfind = string.find
+		local dyn_anomalies = bind_anomaly_field and bind_anomaly_field.dyn_anomalies or {}
+		-- XRRFIX: was `for i=1,65534 do local se_obj = sim:object(i)` with ano_tbl[se_obj:section_name()] and the level from
+		-- the game graph; the snapshot's "measure" list has every anomaly of anomaly_types with its section, level and online
+		for _, anomaly in ipairs(deps.snapshot_entries("measure")) do local i = anomaly.id
+			if ano_tbl[anomaly.section] then
+				local lvl_name = anomaly.level
+				if (not blacklisted_maps[lvl_name] and not additionalBlacklist[lvl_name]) -- not in a blacklisted level
+				and (not (dyn_anomalies[lvl_name] and dyn_anomalies[lvl_name][i] ~= nil)) -- not a dynamic anomaly
+				then
+					local is_online = anomaly.online -- XRRFIX: was se_obj.online
+					local is_nearby = sfind(simulation_objects.config:r_value(actor_level, "target_maps", 0, ""), lvl_name)
+					if ((scan_mode == 1) and is_online) -- same level
+					or ((scan_mode == 2) and (is_online or is_nearby)) -- same + nearby level
+					or ((scan_mode == 3) and is_nearby) -- nearby levels only
+					or ((scan_mode == 4) and (not (is_online or is_nearby))) -- far levels only
+					or (scan_mode == 5) -- anywhere
+					then
+						targets[#targets + 1] = i
+					end
+				end
+			end
+		end
+		
+		if (#targets == 0) then
+			printf("! %s | No anomaly found!",task_id)
+			return false
+		end
+		
+		-- Pick Target
+		target_id = targets[math.random(#targets)]
+		local se_target = alife_object(target_id)
+		if (not se_target) then
+			printe("! %s | cant get server object of anomaly (%s)!",task_id,target_id)
+			return false
+		end
+
+		-- Cache
+		if (not cache[task_id]) then
+			cache[task_id] = {}
+		end
+		cache[task_id][task_giver_id] = {
+			target_id = target_id,
+			task_giver_comm = task_giver_comm,
+			item_1_sec = item_1_sec,
+			monster = monster_allow
+		}
+		
+		return true
+	end
+end
