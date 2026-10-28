@@ -1,0 +1,102 @@
+--[[
+  FX-TGEN: the shared world snapshot.
+  Part of zz Task Generation Speed Fix: installed on the host and the peer with the rest of the mod; it works where
+  tasks are generated (the host, or solo).
+
+  The bounty, measure and delivery tasks each looked for a target by checking every server object of the world
+  (ids 1..65534), once per task and per NPC. Here the world is scanned once and the result is shared:
+    - each part registers a collector: a function that looks at one server object and returns what the part needs
+      to know about it (an "entry"), or nil when the object is of no interest to that part;
+    - entries(part_name) returns that part's list of entries from the last scan, and scans again only when the last
+      scan is older than LIFETIME_MS. One scan calls every collector for every object, so it fills all lists at once;
+    - forget() drops the snapshot (the fix calls it on a level change).
+  Symptom without it: every Taskboard refresh freezes the game for seconds. Cause: one full scan of the world per task
+  and per NPC. A target picked from a snapshot may have changed since the scan (died, moved); the parts re-check what
+  matters, the same way the originals' later steps do.
+]]
+
+-- How long one scan is reused, in ms of time_global(). Also printed in the parts' log markers.
+LIFETIME_MS = 5000
+-- The highest server object id; the originals scan 1..65534 as well.
+local MAX_OBJECT_ID = 65534
+
+-- Part name ("bounty", "measure", "delivery") -> its collector, see register_collector.
+local collectors = {}
+-- The last scan: { taken_at = time_global() of the scan, entries_by_part = { part name -> list of entries } }.
+-- nil before the first request and after forget().
+local snapshot = nil
+-- For take_counters: how many scans were made and how many requests were answered without one.
+local counters = { built = 0, reused = 0 }
+
+--[[ register_collector(part_name, collector)
+  Makes every following scan call collector(id, se_obj, scan) for each existing server object:
+    id     - the object's id (1..65534)
+    se_obj - its server object (alife():object(id))
+    scan   - values shared by the whole scan: { sim = alife(), se_actor = the actor's server object,
+             graph = game_graph() }
+  The collector returns the entry to add to part_name's list, or nil to skip the object. It must not change the game:
+  it runs for 65534 ids inside someone else's request.
+  Called by the bounty, measure and delivery install(). A second call for the same part replaces its collector.
+]]
+function register_collector(part_name, collector)
+	collectors[part_name] = collector
+end
+
+-- Scans all server objects once and returns { part name -> list of entries } with a list for every collector.
+local function scan_world()
+	local entries_by_part = {}
+	for part_name in pairs(collectors) do entries_by_part[part_name] = {} end
+	local sim = alife()
+	local scan = { sim = sim, se_actor = sim:actor(), graph = game_graph() }
+	for id = 1, MAX_OBJECT_ID do
+		local se_obj = sim:object(id)
+		if se_obj then
+			for part_name, collect in pairs(collectors) do
+				local entry = collect(id, se_obj, scan)
+				if entry then
+					local list = entries_by_part[part_name]
+					list[#list + 1] = entry
+				end
+			end
+		end
+	end
+	return entries_by_part
+end
+
+--[[ entries(part_name) -> list of entries
+  The list that part_name's collector gathered in the current snapshot, in id order. Scans the world first when there
+  is no snapshot or it is LIFETIME_MS old. Returns an empty list for a part without a collector. The caller must not
+  change the list: the next callers within LIFETIME_MS get the same one.
+  Called by the parts' replacements during task generation: bounty's build_variants, the measure copy, the delivery
+  copy (the copies get it as deps.snapshot_entries).
+]]
+function entries(part_name)
+	local now = time_global()
+	if snapshot and now - snapshot.taken_at < LIFETIME_MS then
+		counters.reused = counters.reused + 1
+	else
+		counters.built = counters.built + 1
+		snapshot = { taken_at = now, entries_by_part = scan_world() }
+	end
+	return snapshot.entries_by_part[part_name] or {}
+end
+
+--[[ level_name_of(scan, se_obj) -> level name
+  The name of the level the server object is on ("l01_escape", ...), computed the way the originals do it (through its
+  game vertex). For collectors; `scan` is the third argument they get.
+]]
+function level_name_of(scan, se_obj)
+	return scan.sim:level_name(scan.graph:vertex(se_obj.m_game_vertex_id):level_id())
+end
+
+-- Drops the snapshot; the next entries() scans again. Called by zz_xrrfix_tgen on a level change.
+function forget()
+	snapshot = nil
+end
+
+-- Returns { built, reused } since the previous call and starts from zero. Called by zz_xrrfix_tgen.take_stats.
+function take_counters()
+	local taken = counters
+	counters = { built = 0, reused = 0 }
+	return taken
+end

@@ -17,8 +17,8 @@ Third-party modules are replaced by small stand-ins that copy the signatures and
 | FX-TGEN-003 | FX-TGEN-003 calls with an actor, an npc or no task id always reach the original | test_tgen.lua |
 | FX-TGEN-004 | FX-TGEN-004 on_level_changing clears the memo and the bounty snapshot | test_tgen.lua |
 | FX-TGEN-005 | FX-TGEN-005 swaps build_variants once and logs the marker; without the module, debug or a helper: logged and skipped | test_tgen.lua |
-| FX-TGEN-006 | FX-TGEN-006 one scan per 5000 ms snapshot | test_tgen.lua |
-| FX-TGEN-007 | FX-TGEN-007 picks the same candidates, in the same group order, as the original; stops at MAX_VARIANTS | test_tgen.lua |
+| FX-TGEN-006 | FX-TGEN-006 one scan per 5000 ms snapshot; take_stats counts zero for a module that failed to load | test_tgen.lua |
+| FX-TGEN-007 | FX-TGEN-007 picks the same candidates, in the same group order, as the original; a same-named local seen only by append_unique does not replace build_variants' blacklisted_maps; stops at MAX_VARIANTS | test_tgen.lua |
 | FX-TGEN-008 | FX-TGEN-008 every pick passes candidate_valid; refused ones are replaced | test_tgen.lua |
 | FX-TGEN-009 | FX-TGEN-009 wraps on actor_on_first_update once; results and errors pass through | test_tgen.lua |
 | FX-TGEN-010 | FX-TGEN-010 summary after 1 s idle: totals, nested time inside callers, top list; under 5 ms (nested time counted once): no summary, counters reset | test_tgen.lua |
@@ -27,7 +27,7 @@ Third-party modules are replaced by small stand-ins that copy the signatures and
 | FX-TGEN-013 | FX-TGEN-013 measure copy replaces the original under G_FLAT's wrapper, once; G_FLAT still applies | test_tgen.lua |
 | FX-TGEN-014 | FX-TGEN-014 measure: same candidates as the original, per-NPC cache, one scan for many NPCs | test_tgen.lua |
 | FX-TGEN-015 | FX-TGEN-015 delivery copy replaces the original under xrRazom's host guard, once; the guard still works | test_tgen.lua |
-| FX-TGEN-016 | FX-TGEN-016 delivery: same target as the original, per-NPC cache, no-target answered from the snapshot | test_tgen.lua |
+| FX-TGEN-016 | FX-TGEN-016 commanders of squads with current_action ~= 1 are no targets, like the original; delivery: same target as the original, per-NPC cache, no-target answered from the snapshot | test_tgen.lua |
 
 ### MOD-LOOTCLAIM (Combined GAMMA NPC Loot Claim, folder name read from pack.json) — test_lootclaim.lua
 
@@ -94,3 +94,5 @@ None at the moment.
   counted twice, idle 500 ms, no clear on level change), each failed exactly its requirement's case.
 - FX-TGEN measure/delivery: 8 mutations (no type filter, blacklist frozen at install, same-level commanders kept, far/linked
   inverted, replacement not put into the table / wrapper, wrapper bypassed, no idempotency, no faction filter), each caught.
+- FX-TGEN after the split into modules (2026-10-28): 15 mutations across the modules, each caught; among them helper
+  upvalues read last-wins, `current_action == 1` dropped, `take_stats` without pcall.

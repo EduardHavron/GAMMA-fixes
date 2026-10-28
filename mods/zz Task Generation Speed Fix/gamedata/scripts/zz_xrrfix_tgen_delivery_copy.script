@@ -1,0 +1,151 @@
+--[[
+  FX-TGEN, part "delivery": a verbatim copy of xr_effects.on_init_delivery_task from 463- Tasks QoL Pack - Serious
+  (gamedata/scripts/tasks_delivery.script). Only its search for a target is replaced: instead of checking all 65534
+  server objects it reads the squad-commander list of the shared world snapshot (zz_xrrfix_tgen_snapshot). Everything
+  else - the dialog NPC, the faction filter, blacklists, the per-NPC target cache, "no target found", the saved task
+  data and the news message - is the original's text, formatting included, so it can be compared by a plain diff.
+  The indent inside the replaced loop is the original's (two `if` levels were removed): it keeps that diff small.
+  Part of zz Task Generation Speed Fix: installed on the host and the peer with the rest of the mod; it works where
+  tasks are generated (the host, or solo). Symptom without the fix: seconds of freeze on every Taskboard refresh.
+  How to check it after Tasks QoL updates: take the body of make_on_init_delivery_task (the lines between
+  `return function(actor,npc,p)` and its `end`), remove one tab of indent and diff it with xr_effects.on_init_delivery_task in
+  tasks_delivery.script. The only differences must be the lines marked `-- XRRFIX:`. If the original changed elsewhere,
+  copy the new text here and redo only the marked places.
+]]
+
+--[[ make_on_init_delivery_task(deps) -> on_init_delivery_task
+  Builds the replacement for on_init_delivery_task. The original reads local variables of tasks_delivery.script that
+  this file cannot see; zz_xrrfix_tgen_delivery.install finds them through the original's upvalues and passes them in:
+    deps.delivery_cache   - the module's table of chosen targets: delivery_cache[task_id][task_giver_id] = target id;
+                            a giver keeps offering the same courier target until the task is taken or the cache resets
+    deps.faction_list     - the module's list of factions a target may belong to
+    deps.snapshot_entries - zz_xrrfix_tgen_snapshot.entries: the list a part's collector gathered in the last world scan
+  Returns the function to put in place of the original; same arguments and effects as the original:
+    p = task params from the task ltx: { task_id, same faction only, far location only, item section, ... };
+    picks a target for the dialog NPC, saves the task data (save_var) and shows the news message; with no target it
+    marks the task in blacklist_helper.TaskBlacklist, like the original.
+  Called once per game start by zz_xrrfix_tgen_delivery.install; the returned function is then called by task
+  generation as the on_job_descr effect of every delivery task offered by every NPC.
+]]
+function make_on_init_delivery_task(deps)
+	local delivery_cache, faction_list = deps.delivery_cache, deps.faction_list
+	return function(actor,npc,p)
+		if (not p) or (p and (#p < 4)) then
+			return
+		end
+		local var = p[1]
+		local same_faction = (p[2] == "true")
+		local far_location = (p[3] == "true")
+		local item_1_sec = p[math.random(4,#p)]
+		if (not ini_sys:section_exist(item_1_sec)) then
+			printe("! %s TASK ERROR: xr_effects.create_delivery_quest - can't find item section [%s]", var, tostring(item_1_sec))
+			--return
+		end
+		
+		local task_giver = mob_trade.GetTalkingNpc()
+		local task_giver_id = task_giver:id()
+		local task_giver_comm = character_community(task_giver)
+		local task_giver_name = task_giver:character_name()
+		local target_id
+		
+		-- Get target
+		local sim = alife()
+		if delivery_cache[var] and delivery_cache[var][task_giver_id] then
+			target_id = delivery_cache[var][task_giver_id]
+		else
+			local blacklisted_maps = xr_effects.blacklisted_maps
+
+			--[[
+				SERIOUS NO NORTH TASKS BEFORE BS
+				AND THE NORTHERN JOB
+			--]]
+			local additionalBlacklist = {}
+			local northernMaps = blacklist_helper.GetNorthernMaps()
+		
+			if blacklist_helper.ShouldBlacklistNorth() then
+				additionalBlacklist = northernMaps
+			elseif northernMaps[level.name()] then -- Player is in the Northern region and rightfully so
+				additionalBlacklist = blacklist_helper.GetSouthernMaps()
+			end
+			--[[
+				SERIOUS NO NORTH TASKS BEFORE BS
+				AND THE NORTHERN JOB
+			--]]
+
+
+			local faction_lookup = {}
+			faction_lookup[task_giver_comm] = true
+			if (not same_faction) then
+				for i=1,#faction_list do
+					if (faction_list[i] ~= task_giver_comm) and (not game_relations.is_factions_enemies(task_giver_comm, faction_list[i])) and (not game_relations.is_factions_enemies(character_community(db.actor), faction_list[i])) then
+						faction_lookup[faction_list[i]] = true
+					end
+				end
+			end
+			
+			local targets = {}
+			local gg = game_graph()
+			local sfind = string.find
+			-- XRRFIX: was `for i=1,65534 do local se_obj = sim:object(i)` that kept common npcs (sim_default stalkers without a
+			-- story id) commanding a sim_squad with current_action == 1, then filtered them as below; the snapshot's "delivery"
+			-- list has those commanders with their faction, level and whether they are on the actor's level or a linked one
+			for _, commander in ipairs(deps.snapshot_entries("delivery")) do local i = commander.id
+					-- Search in natural factions
+					local comm = commander.faction -- XRRFIX: was alife_character_community(se_obj)
+					if (faction_lookup[comm] == true) then
+							-- Search in far/nearby locations. Exclude same level, blacklisted areas and undergrounds
+							local lvl_name = commander.level -- XRRFIX: was the level from the game graph
+							-- XRRFIX: on_actor_level / on_linked_level were is_on_the_same_level / is_on_the_linked_level(sim:actor(), se_obj)
+							if not blacklisted_maps[lvl_name] and not additionalBlacklist[lvl_name] and not commander.on_actor_level then
+								if far_location and (not commander.on_linked_level) then 
+									targets[#targets + 1] = i
+								elseif (not far_location) then
+									targets[#targets + 1] = i
+								end
+							end
+					end
+			end
+			if (#targets == 0) then
+				printf("! %s TASK ERROR: xr_effects.create_delivery_quest - no target found!", var)
+				blacklist_helper.TaskBlacklist[p[1]] = true
+				return
+			end
+
+			blacklist_helper.TaskBlacklist[p[1]] = false
+			target_id = targets[math.random(#targets)]
+			
+			if (not delivery_cache[var]) then
+				delivery_cache[var] = {}
+			end
+			delivery_cache[var][task_giver_id] = target_id -- cache
+		end
+		
+		-- Save var
+		local se_target = alife_object(target_id)
+		if (not se_target) then
+			return
+		end
+		local target_comm = alife_character_community(se_target)
+		local level_target = sim:level_name(game_graph():vertex(se_target.m_game_vertex_id):level_id())
+		local level_task = level.name()
+		local tbl = {
+			lvl_task = level_task,
+			lvl_target = level_target,
+			task_giver_comm = task_giver_comm,
+			task_giver_name = task_giver_name,
+			target_id = target_id,
+			target_comm = target_comm,
+			item_1_sec = item_1_sec 
+		}
+		save_var(db.actor, var, tbl)
+		printdbg("- %s | on_init_delivery_task | giver_comm: %s - target_id: %s - item_1_sec: %s - lvl_task: %s - lvl_target: %s", var, task_giver_comm, target_id, item_1_sec, level_task, level_target)
+		-- Show info
+		local function postpone_for_next_frame(target_id)
+			local news_caption = game.translate_string(task_manager.task_ini:r_string_ex(p[1], "title")) or "error"
+			local news_text = game.translate_string("st_mm_new_game_name") .. " " .. se_target:character_name() .. "\\n " .. game.translate_string("st_mm_new_game_faction_2") .. " " .. game.translate_string(se_target:community()) .. "\\n " .. game.translate_string("st_location") .. " " .. game.translate_string(level_target)
+			db.actor:give_talk_message2(news_caption, news_text, se_target:character_icon(), "iconed_answer_item", p[1])
+			return true
+		end
+		CreateTimeEvent(0,"on_init_delivery_task",0,postpone_for_next_frame,target_id)
+	end
+end

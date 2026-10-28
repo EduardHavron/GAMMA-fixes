@@ -1,4 +1,4 @@
--- FX-TGEN: zz_xrrfix_tgen.script, zz_xrrfix_tgen_prof.script (specs/fixes/fx-tgen.md)
+-- FX-TGEN: zz_xrrfix_tgen*.script, zz_xrrfix_tgen_prof.script (specs/fixes/fx-tgen.md)
 local H = ...
 
 local MOD = "zz Task Generation Speed Fix"
@@ -129,6 +129,22 @@ local function st(comm, rela, map, near, extra)
 	return o
 end
 
+-- Loads the fix into G: the entry script now; like the game's script loader, any other zz_xrrfix_tgen_* module of the
+-- mod on its first reference (opts.broken = { module name -> true } makes that module fail to load).
+local function load_fix(G, opts)
+	local broken = opts and opts.broken or {}
+	setmetatable(G.__lazy, { __index = function(_, name)
+		if type(name) ~= "string" or not name:find("^zz_xrrfix_tgen_") then return nil end
+		if broken[name] then return "error('broken module', 0)" end
+		local fh = io.open(H.root .. "/mods/" .. MOD .. "/gamedata/scripts/" .. name .. ".script", "rb")
+		if not fh then return nil end
+		local src = fh:read("*a")
+		fh:close()
+		return src
+	end })
+	return H.load_fix(G, MOD, FIX)
+end
+
 local function setup(opts)
 	opts = opts or {}
 	local G = H.env()
@@ -154,7 +170,7 @@ local function setup(opts)
 		if opts.bounty_patch then src = opts.bounty_patch(src) end
 		H.lazy(G, "z_taskboard_bounty_variants", src)
 	end
-	local fix = H.load_fix(G, MOD, FIX)
+	local fix = load_fix(G, opts)
 	fix.on_game_start()
 	return G, fix
 end
@@ -306,6 +322,17 @@ H.case("FX-TGEN-006 one scan per 5000 ms snapshot", function()
 	H.eq(2, s.reused, "two reused")
 end)
 
+H.case("FX-TGEN-006 take_stats counts zero for a module that failed to load", function()
+	local G = setup({ broken = { zz_xrrfix_tgen_memo = true } })
+	H.log_has(G, "[XRRFIX] tgen: memo install error: broken module", "memo failed")
+	H.log_has(G, BOUNTY_MARKER, "bounty still installed")
+	variants(G, "b1", { "b1", "false", "false", "bandit" })
+	local s = G.zz_xrrfix_tgen.take_stats()
+	H.eq(0, s.hits, "no memo hits")
+	H.eq(0, s.misses, "no memo misses")
+	H.eq(1, s.built, "snapshot counters still read")
+end)
+
 H.case("FX-TGEN-007 picks the same candidates, in the same group order, as the original", function()
 	local objs = {
 		[1] = st("bandit", "enemy", "l01_escape", false),        -- far enemy
@@ -330,6 +357,23 @@ H.case("FX-TGEN-007 picks the same candidates, in the same group order, as the o
 	O.__extra_blacklist = { l04_darkvalley = true }
 	O.__bad_smarts = { [77] = true }
 	H.same({ 4, 3, 1 }, variants(O, "b1", p), "original agrees")
+end)
+
+H.case("FX-TGEN-007 a same-named local seen only by append_unique does not replace build_variants' blacklisted_maps", function()
+	-- append_unique gets its own blacklisted_maps that bans l01_escape; build_variants keeps the mod's table
+	local function shadow(src)
+		src = string.gsub(src, "local function append_unique%(result, seen, source%)\n",
+			"local append_unique\ndo\nlocal blacklisted_maps = { l01_escape = true }\n"
+			.. "append_unique = function(result, seen, source)\n\tlocal _ = blacklisted_maps\n")
+		return (string.gsub(src, "local function shuffled_copy", "end\nlocal function shuffled_copy"))
+	end
+	local objs = { [10] = st("bandit", "enemy", "l01_escape") }
+	local p = { "b1", "false", "false", "bandit" }
+	local G = setup({ objs = objs, bounty_patch = shadow })
+	H.log_has(G, BOUNTY_MARKER)
+	local O = setup({ objs = objs, bounty_patch = shadow, debug = {} })
+	H.same({ 10 }, variants(O, "b1", p), "the original ignores append_unique's local")
+	H.same({ 10 }, variants(G, "b1", p), "the fix as well")
 end)
 
 H.case("FX-TGEN-007 stops at MAX_VARIANTS", function()
@@ -638,7 +682,7 @@ local function task_setup(objs, opts)
 	H.load_module(G, "tasks_delivery", DELIVERY_SRC)
 	if not opts.no_guard then H.load_module(G, "xrr_patch_task_guards", GUARD_SRC) end
 	if opts.debug then G.debug = opts.debug end
-	local fix = H.load_fix(G, MOD, FIX)
+	local fix = load_fix(G, opts)
 	fix.on_game_start()
 	return G, fix
 end
@@ -733,6 +777,21 @@ H.case("FX-TGEN-015 delivery copy replaces the original under xrRazom's host gua
 
 	local S = task_setup(delivery_world(), { debug = {} })
 	H.log_has(S, "[XRRFIX] tgen: on_init_delivery_task not recognised, delivery part skipped")
+end)
+
+H.case("FX-TGEN-016 commanders of squads with current_action ~= 1 are no targets, like the original", function()
+	local function world()
+		local objs = delivery_world()
+		commander(objs, 16, "stalker", "l06_rostok")   -- the highest id: math.random would pick it
+		objs[1016].current_action = 0
+		return objs
+	end
+	local G = task_setup(world())
+	local O = task_setup(world(), { debug = {} })
+	deliver(O, "d1", 1)
+	deliver(G, "d1", 1)
+	H.eq(12, O.__saved.d1.target_id, "the original skips the busy squad")
+	H.eq(O.__saved.d1.target_id, G.__saved.d1.target_id, "the fix as well")
 end)
 
 H.case("FX-TGEN-016 delivery: same target as the original, per-NPC cache, no-target answered from the snapshot", function()
