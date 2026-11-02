@@ -1,0 +1,49 @@
+SDD: sortingplus_preset (STALKER GAMMA 0.9.5)
+
+1. Purpose
+Custom inventory sorting preset for SortingPlus (RavenAscendant). Reorders
+medicine, ammo parts, belt items, drinks and utility tools without changing
+the relative order of the other categories.
+
+2. Components
+- gamedata/configs/sortingplus.ltx
+  Replaces the original config ([item_kind_order], [kind_overrides],
+  [sortingplusmcm]).
+- gamedata/scripts/zz_default_favorites.script
+  Seeds a default favorites set once per save.
+
+3. Design: sortingplus.ltx
+- Rank scale: all original ranks x10 (integers only); ties between categories
+  are preserved. New kinds fit between old ranks.
+- New kinds:
+  - i_attach (50): belt items (plates, freon...), placed above i_arty (51).
+  - i_med_top (60): rebirth, stimpack, stimpack_army, stimpack_scientic,
+    medkit, medkit_army, medkit_scientic, bandage, jgut. Followed by
+    i_medical (61).
+  - i_drink (90) before i_food (91); i_mutant_cooked stays tied to i_food.
+  - w_ammo_part (71), directly after w_ammo (70): casing_*, powder_*,
+    bullet_* (15 crafting component sections).
+- Each kind starts a new inventory row, so related items share one kind to
+  avoid row breaks. Order inside a kind is decided by SortingPlus.
+- New kinds are registered in the [sortingplusmcm] category lists.
+
+4. Design: zz_default_favorites.script
+- On actor_on_first_update, calls zzz_rax_sortingplus_mcm.set_favorite(sec, true)
+  for the sections: itm_advancedkit, itm_basickit, itm_expertkit,
+  itm_drugkit, itm_ammokit, e_syringe, jar, prt_i_plastic, swiss_knife,
+  grooming, leatherman_tool, armor_repair_fa, sewing_kit_b.
+- Each section is seeded once (flag stored in the save via save_state /
+  load_state), so a player can remove it from favorites and it will not return.
+- Sections already marked as junk are skipped.
+
+5. Dependencies
+- SortingPlus (RavenAscendant), with "Use sortingplus.ltx" enabled in MCM.
+- Mod must be installed below the original SortingPlus in the MO2 load order.
+
+6. Known limitations
+- Seamless Inventory Sort: its "ammo_parts_row" option overrides the rank of
+  ammo parts (absolute ap_order, default 9.5) and breaks custom scales.
+  Disable it in MCM (see bug report).
+- Order of items inside one kind is not controllable from the config.
+- The zz_default_favorites.script is based on SortingPlus source code;
+  section names must match the game's item sections.
