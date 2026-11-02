@@ -1,0 +1,137 @@
+
+;Change this table to change how things are sorted when not using AMCM or when "Use sortingplus.ltx" is checked in the AMCM menu.
+
+[item_kind_order]
+; Scale = original order x10, so new sub-kinds fit between the old categories as integers.
+favorites           = -20 ;custom category items set to via key bind
+loadout				= -10 ;support for ARM
+mags				= 0  ;support for ARM
+w_sniper            = 10
+w_rifle             = 10
+w_smg               = 10
+w_shotgun           = 10
+w_pistol            = 10
+w_melee             = 10
+w_misc              = 20
+w_base              = 20
+w_explosive         = 20
+o_heavy             = 30
+o_sci               = 30
+o_medium            = 30
+o_light             = 30
+o_helmet            = 30
+
+i_attach            = 50 ;belt items (plates, freon...) above artifacts
+i_arty              = 51
+i_arty_junk         = 51
+i_arty_cont         = 51
+i_device            = 40
+
+i_tool              = 80
+i_repair            = 80
+i_kit               = 80
+
+i_backpack          = 30
+
+i_med_top           = 60 ;rebirth, stimpacks, medkits, bandage, tourniquet (one kind = no row breaks between them)
+i_medical           = 61
+
+i_drink             = 90 ;drinks before food
+i_food              = 91
+i_mutant_cooked     = 91
+i_mutant_raw        = 100
+
+i_letter            = 40
+
+i_quest             = 990
+
+w_ammo              = 70
+w_ammo_part         = 71 ;ammo parts below whole ammo
+
+i_mutant_belt       = 51
+
+i_mutant_part       = 110
+
+i_misc              = 120
+i_upgrade           = 130
+i_part              = 140
+faction_patch       = 150
+junk                = 1000 ;custom category items set to via key bind
+
+;You can force some items to be sorted as a different "kind" so they are grouped together with other items with perceived similarity.
+;Below are some opinionated defaults. If you add a brand new "kind" entry, (like "faction_patch") be sure to also add it to [item_kind_order] section above.
+
+[kind_overrides]
+; --- medicine priority group (one kind)
+rebirth             = i_med_top
+stimpack            = i_med_top
+stimpack_army       = i_med_top
+stimpack_scientic   = i_med_top
+medkit              = i_med_top
+medkit_army         = i_med_top
+medkit_scientic     = i_med_top
+bandage             = i_med_top
+jgut                = i_med_top
+; --- belt items (kind i_attach is set in items_attachments.ltx, no override needed)
+; --- ammo parts (crafting components), below whole ammo
+casing_p            = w_ammo_part
+casing_s            = w_ammo_part
+casing_r5           = w_ammo_part
+casing_r7           = w_ammo_part
+powder_1            = w_ammo_part
+powder_2            = w_ammo_part
+powder_3            = w_ammo_part
+bullet_pistol       = w_ammo_part
+bullet_pistol_ap    = w_ammo_part
+bullet_shotgun      = w_ammo_part
+bullet_shotgun_ap   = w_ammo_part
+bullet_r5           = w_ammo_part
+bullet_r5_ap        = w_ammo_part
+bullet_r7           = w_ammo_part
+bullet_r7_ap        = w_ammo_part
+hand_watch          = i_device
+wpn_binoc_inv       = i_device
+good_psy_helmet     = i_device
+bad_psy_helmet      = i_device
+decoder             = i_device
+attackers_pda       = i_device
+contact_lost_pda    = i_device
+lead_box            = i_tool
+csky_patch          = faction_patch
+dolg_patch          = faction_patch
+ecolog_patch        = faction_patch
+freedom_patch       = faction_patch
+stalker_patch       = faction_patch
+bandit_patch        = faction_patch
+monolith_patch      = faction_patch
+army_patch          = faction_patch
+killer_patch        = faction_patch
+renegade_patch      = faction_patch
+isg_patch           = faction_patch
+greh_patch          = faction_patch
+af_misery_bread     = i_arty
+
+; this section describes the catagories used in the second half of the AMCM menu. This section is for modders to add new item types added by 
+;		thier mod to the existing catagories or even add new ones. When adding new catagories you must make translation strings in 
+;		configs/text/eng and configs/text/rus see existing strings for formatting. The leading number is the default value, position in the list
+;		equates to position. NO WHITE SPACE!
+[sortingplusmcm]
+000favorites      = -2,favorites;custom category items set to via key bind
+001loadout		  = -1,loadout;support for ARM
+002mags		 	  = 0,mags;support for ARM
+010weapons        = 1,w_sniper,w_rifle,w_smg,w_shotgun,w_pistol,w_melee,w_misc,w_base,w_explosive
+020outfits        = 2,o_heavy,o_sci,o_medium,o_light,o_helmet,i_backpack
+030artifacts      = 3,i_attach,i_arty,i_arty_junk,i_arty_cont
+040devices        = 4,i_device
+050tools          = 5,i_top_tool,i_tool,i_repair,i_kit
+060medical        = 6,i_med_top,i_medical
+070foods          = 7,i_drink,i_food
+080mutantfoods    = 7,i_mutant_cooked,i_mutant_raw
+090quest          = 8,i_quest
+100notes          = 8,i_letter
+110ammo           = 9,w_ammo,w_ammo_part
+120mutantparts    = 10,i_mutant_belt,i_mutant_part
+130misc           = 11,i_misc
+140upgrades       = 12,i_upgrade
+150parts          = 13,i_part
+999junk           = 100,junk;custom category items set to via key bind

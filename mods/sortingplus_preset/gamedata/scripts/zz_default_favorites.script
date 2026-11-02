@@ -1,0 +1,38 @@
+-- Seeds a default set of favorites for Sorting Plus once per save.
+-- Each section is added only once, so a player who removes it from favorites
+-- (or sends it to junk) will not get it back.
+
+local DEFAULTS = {
+    "itm_advancedkit", "itm_basickit", "itm_expertkit", "itm_drugkit", "itm_ammokit",
+    "e_syringe", "jar", "prt_i_plastic",
+    "swiss_knife", "grooming", "leatherman_tool",
+    "armor_repair_fa", "sewing_kit_b",
+}
+
+local seeded = {} -- section -> true, stored in the save
+
+local function save_state(mdata)
+    mdata.default_favorites_seeded = seeded
+end
+
+local function load_state(mdata)
+    seeded = mdata.default_favorites_seeded or seeded
+end
+
+local function seed()
+    local sp = zzz_rax_sortingplus_mcm
+    if not (sp and sp.set_favorite and sp.is_favorite and sp.is_junk) then return end
+    for _, sec in ipairs(DEFAULTS) do
+        if not seeded[sec] then
+            seeded[sec] = true
+            -- Respect the player's own choice if it already exists.
+            if not sp.is_junk(sec) then sp.set_favorite(sec, true) end
+        end
+    end
+end
+
+function on_game_start()
+    RegisterScriptCallback("save_state", save_state)
+    RegisterScriptCallback("load_state", load_state)
+    RegisterScriptCallback("actor_on_first_update", seed)
+end
